@@ -7,16 +7,20 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 // DBManager manages database connections for shared and per-user databases
 type DBManager struct {
-	basePath    string
-	sharedDB    *sql.DB
-	userDBCache map[string]*sql.DB
-	cacheMutex  sync.RWMutex
+	basePath       string
+	sharedDB       *sql.DB
+	userDBCache    map[string]*sql.DB
+	userDBLastUsed map[string]time.Time
+	cacheMutex     sync.RWMutex
+	stopCleanup    chan struct{}
+	closeOnce      sync.Once
 }
 
 // NewDBManager creates a new database manager
@@ -27,14 +31,19 @@ func NewDBManager(basePath string) (*DBManager, error) {
 	}
 
 	manager := &DBManager{
-		basePath:    basePath,
-		userDBCache: make(map[string]*sql.DB),
+		basePath:       basePath,
+		userDBCache:    make(map[string]*sql.DB),
+		userDBLastUsed: make(map[string]time.Time),
+		stopCleanup:    make(chan struct{}),
 	}
 
 	// Initialize shared database
 	if err := manager.initSharedDB(); err != nil {
 		return nil, fmt.Errorf("failed to initialize shared database: %v", err)
 	}
+
+	// Start background cleanup of idle connections
+	go manager.cleanupLoop()
 
 	return manager, nil
 }
@@ -48,11 +57,15 @@ func (m *DBManager) GetSharedDB() *sql.DB {
 func (m *DBManager) GetUserDB(email string) (*sql.DB, error) {
 	// Check cache first
 	m.cacheMutex.RLock()
-	if db, exists := m.userDBCache[email]; exists {
-		m.cacheMutex.RUnlock()
+	db, exists := m.userDBCache[email]
+	m.cacheMutex.RUnlock()
+
+	if exists {
+		m.cacheMutex.Lock()
+		m.userDBLastUsed[email] = time.Now()
+		m.cacheMutex.Unlock()
 		return db, nil
 	}
-	m.cacheMutex.RUnlock()
 
 	// Create or open user database
 	m.cacheMutex.Lock()
@@ -60,6 +73,7 @@ func (m *DBManager) GetUserDB(email string) (*sql.DB, error) {
 
 	// Double-check after acquiring write lock
 	if db, exists := m.userDBCache[email]; exists {
+		m.userDBLastUsed[email] = time.Now()
 		return db, nil
 	}
 
@@ -93,6 +107,7 @@ func (m *DBManager) GetUserDB(email string) (*sql.DB, error) {
 
 	// Cache the connection
 	m.userDBCache[email] = db
+	m.userDBLastUsed[email] = time.Now()
 
 	return db, nil
 }
@@ -199,24 +214,60 @@ func (m *DBManager) getUserDBPath(email string) string {
 // Close closes all database connections
 func (m *DBManager) Close() error {
 	var lastErr error
+	m.closeOnce.Do(func() {
+		close(m.stopCleanup)
 
-	// Close shared database
-	if m.sharedDB != nil {
-		if err := m.sharedDB.Close(); err != nil {
-			lastErr = err
+		// Close shared database
+		if m.sharedDB != nil {
+			if err := m.sharedDB.Close(); err != nil {
+				lastErr = err
+			}
+		}
+
+		// Close all user databases
+		m.cacheMutex.Lock()
+		defer m.cacheMutex.Unlock()
+
+		for email, db := range m.userDBCache {
+			if err := db.Close(); err != nil {
+				lastErr = err
+			}
+			delete(m.userDBCache, email)
+			delete(m.userDBLastUsed, email)
+		}
+	})
+
+	return lastErr
+}
+
+func (m *DBManager) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			m.cleanupIdleConnections()
+		case <-m.stopCleanup:
+			return
 		}
 	}
+}
 
-	// Close all user databases
+func (m *DBManager) cleanupIdleConnections() {
 	m.cacheMutex.Lock()
 	defer m.cacheMutex.Unlock()
 
-	for email, db := range m.userDBCache {
-		if err := db.Close(); err != nil {
-			lastErr = err
-		}
-		delete(m.userDBCache, email)
-	}
+	now := time.Now()
+	idleTimeout := 15 * time.Minute
 
-	return lastErr
+	for email, lastUsed := range m.userDBLastUsed {
+		if now.Sub(lastUsed) > idleTimeout {
+			if db, exists := m.userDBCache[email]; exists {
+				_ = db.Close()
+				delete(m.userDBCache, email)
+				delete(m.userDBLastUsed, email)
+			}
+		}
+	}
 }
