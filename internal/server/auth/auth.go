@@ -189,12 +189,12 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 		if len(partsNull) >= 3 {
 			username = partsNull[1]
 			password = partsNull[2]
-			log.Printf("AUTHENTICATE PLAIN: extracted username=%s (password length=%d)", username, len(password))
+			log.Printf("AUTHENTICATE PLAIN: extracted username=%s", sanitizeLog(username))
 		} else if len(partsNull) == 2 {
 			// fallback: username and password
 			username = partsNull[0]
 			password = partsNull[1]
-			log.Printf("AUTHENTICATE PLAIN: fallback extracted username=%s (password length=%d)", username, len(password))
+			log.Printf("AUTHENTICATE PLAIN: fallback extracted username=%s", sanitizeLog(username))
 		} else {
 			log.Printf("AUTHENTICATE PLAIN: invalid format, expected 2-3 parts, got %d", len(partsNull))
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid credentials format", tag))
@@ -823,6 +823,11 @@ func getJSON(endpoint, assertion string, out any) error {
 	}
 
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func sanitizeLog(input string) string {
+	s := strings.ReplaceAll(input, "\n", "\\n")
+	return strings.ReplaceAll(s, "\r", "\\r")
 }
 
 func buildAuthHTTPClient() *http.Client {
