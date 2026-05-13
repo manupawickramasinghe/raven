@@ -408,7 +408,7 @@ func HandleLogout(deps ServerDeps, conn net.Conn, tag string) {
 func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username string, password string, state *models.ClientState) {
 	loginEmail := normalizeEmail(username)
 	if loginEmail == "" {
-		log.Printf("LOGIN: rejected non-email login identity: %q", username)
+		log.Printf("LOGIN: rejected non-email login identity: %q", strings.ReplaceAll(strings.ReplaceAll(username, "\n", "\\n"), "\r", "\\r"))
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 		return
 	}
@@ -484,12 +484,12 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 			return
 		}
 		if authResp.ID == "" {
-			log.Printf("LOGIN: auth response missing id for user: %s", username)
+			log.Printf("LOGIN: auth response missing id for user: %s", strings.ReplaceAll(strings.ReplaceAll(username, "\n", "\\n"), "\r", "\\r"))
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 			return
 		}
 
-		log.Printf("Accepting login for user: %s (type=%s)", username, authResp.Type)
+		log.Printf("Accepting login for user: %s (type=%s)", strings.ReplaceAll(strings.ReplaceAll(username, "\n", "\\n"), "\r", "\\r"), authResp.Type)
 
 		parts := strings.SplitN(loginEmail, "@", 2)
 		loginDomain := strings.Trim(strings.TrimSpace(parts[1]), ".")
@@ -508,13 +508,13 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		}
 
 		if expectedDomain == "" {
-			log.Printf("LOGIN: unable to resolve expected IdP domain for login '%s'", loginEmail)
+			log.Printf("LOGIN: unable to resolve expected IdP domain for login '%s'", strings.ReplaceAll(strings.ReplaceAll(loginEmail, "\n", "\\n"), "\r", "\\r"))
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 			return
 		}
 
 		if !strings.EqualFold(loginDomain, expectedDomain) {
-			log.Printf("LOGIN: login domain '%s' does not match OU-derived domain '%s' for user '%s'", loginDomain, expectedDomain, loginEmail)
+			log.Printf("LOGIN: login domain '%s' does not match OU-derived domain '%s' for user '%s'", loginDomain, expectedDomain, strings.ReplaceAll(strings.ReplaceAll(loginEmail, "\n", "\\n"), "\r", "\\r"))
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 			return
 		}
@@ -550,7 +550,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 	} else {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("LOGIN: auth server rejected login for %s (status=%d, body=%s)", username, resp.StatusCode, strings.TrimSpace(string(body)))
+		log.Printf("LOGIN: auth server rejected login for %s (status=%d, body=%s)", strings.ReplaceAll(strings.ReplaceAll(username, "\n", "\\n"), "\r", "\\r"), resp.StatusCode, strings.TrimSpace(string(body)))
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 	}
 }
@@ -690,9 +690,7 @@ func fetchAssertion(baseURL, username, password string) string {
 	}
 
 	if err := postJSON(baseURL+"/flow/execute", payload, "", &result); err != nil {
-		// Sanitize username for logging to prevent log injection
-		sanitizedUsername := strings.ReplaceAll(strings.ReplaceAll(username, "\n", "\\n"), "\r", "\\r")
-		log.Printf("LOGIN: flow execute failed for user %s: %v", sanitizedUsername, err)
+		log.Printf("LOGIN: flow execute failed for user %s: %v", strings.ReplaceAll(strings.ReplaceAll(username, "\n", "\\n"), "\r", "\\r"), err)
 		return ""
 	}
 
