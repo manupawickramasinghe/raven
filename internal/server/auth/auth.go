@@ -640,8 +640,14 @@ func extractBaseURL(rawURL string) (string, error) {
 }
 
 func fetchSystemAssertion(baseURL string) string {
-	username := getEnvOrDefault("IDP_SYSTEM_USERNAME", "admin")
-	password := getEnvOrDefault("IDP_SYSTEM_PASSWORD", "admin")
+	username := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
+	password := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
+
+	if username == "" || password == "" {
+		log.Printf("LOGIN: IDP_SYSTEM_USERNAME or IDP_SYSTEM_PASSWORD not configured, cannot obtain system assertion")
+		return ""
+	}
+
 	log.Printf("LOGIN: requesting system assertion for OU resolution using configured system identity")
 
 	assertion := fetchAssertion(baseURL, username, password)

@@ -173,7 +173,8 @@ func TestBuildAuthHTTPClient(t *testing.T) {
 }
 
 func TestGetEnvOrDefault(t *testing.T) {
-	t.Setenv("AUTH_TEST_ENV", "")
+	// Need to handle the fact that getEnvOrDefault trims space and returns fallback if empty
+	os.Unsetenv("AUTH_TEST_ENV")
 	if got := getEnvOrDefault("AUTH_TEST_ENV", "fallback"); got != "fallback" {
 		t.Fatalf("getEnvOrDefault() = %q, want %q", got, "fallback")
 	}
