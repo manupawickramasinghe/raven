@@ -693,7 +693,8 @@ func fetchAssertion(baseURL, username, password string) string {
 	}
 
 	if err := postJSON(baseURL+"/flow/execute", payload, "", &result); err != nil {
-		log.Printf("LOGIN: flow execute failed for user %s: %v", username, err)
+		sanitizedUsername := strings.ReplaceAll(strings.ReplaceAll(username, "\n", ""), "\r", "")
+		log.Printf("LOGIN: flow execute failed for user %s: %v", sanitizedUsername, err)
 		return ""
 	}
 
