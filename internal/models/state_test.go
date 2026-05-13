@@ -82,3 +82,15 @@ func TestClientState_FieldModification(t *testing.T) {
 		t.Error("Failed to modify UIDNext field")
 	}
 }
+
+func TestClientState_ReadOnly(t *testing.T) {
+	state := ClientState{}
+	if state.ReadOnly {
+		t.Error("Expected ReadOnly to be false by default")
+	}
+
+	state.ReadOnly = true
+	if !state.ReadOnly {
+		t.Error("Failed to modify ReadOnly field")
+	}
+}

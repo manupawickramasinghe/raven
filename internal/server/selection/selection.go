@@ -86,6 +86,11 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	state.UIDValidity = uidValidity
 	state.UIDNext = uidNext
 
+	// Determine if this is SELECT or EXAMINE
+	cmd := strings.ToUpper(parts[1])
+	isExamine := (cmd == "EXAMINE")
+	state.ReadOnly = isExamine
+
 	// Get message count using new schema
 	count, err := db.GetMessageCountPerUser(targetDB, mailboxID)
 	if err != nil {
@@ -115,10 +120,6 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	// Initialize state tracking for NOOP and other commands
 	state.LastMessageCount = count
 	state.LastRecentCount = recent
-
-	// Determine if this is SELECT or EXAMINE
-	cmd := strings.ToUpper(parts[1])
-	isExamine := (cmd == "EXAMINE")
 
 	// Send REQUIRED untagged responses in the correct order per RFC 3501
 	// For SELECT: FLAGS, EXISTS, RECENT
@@ -178,9 +179,18 @@ func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 
 	// Important: Per RFC 3501, if mailbox is read-only (selected with EXAMINE),
 	// no messages are removed and no error is given.
-	// Since we don't currently track read-only state in ClientState,
-	// we always perform the expunge operation.
-	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
+	if state.ReadOnly {
+		// Clear selection and return successfully
+		state.SelectedMailboxID = 0
+		state.SelectedFolder = ""
+		state.ReadOnly = false
+		state.LastMessageCount = 0
+		state.LastRecentCount = 0
+		state.UIDValidity = 0
+		state.UIDNext = 0
+		deps.SendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
+		return
+	}
 
 	// Get user database
 	userDB, err := deps.GetUserDB(resolveStateEmail(state))
@@ -221,6 +231,7 @@ func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 	// Return to authenticated state by clearing the selected mailbox
 	state.SelectedFolder = ""
 	state.SelectedMailboxID = 0
+	state.ReadOnly = false
 	state.LastMessageCount = 0
 	state.LastRecentCount = 0
 	state.UIDValidity = 0
@@ -246,6 +257,7 @@ func HandleUnselect(deps ServerDeps, conn net.Conn, tag string, state *models.Cl
 	// Close mailbox without expunging messages
 	state.SelectedFolder = ""
 	state.SelectedMailboxID = 0
+	state.ReadOnly = false
 	// Reset state tracking
 	state.LastMessageCount = 0
 	state.LastRecentCount = 0

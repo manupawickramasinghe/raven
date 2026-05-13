@@ -587,3 +587,23 @@ func TestExpungeCommand_PreservesMessageData(t *testing.T) {
 		t.Errorf("Expected message data to be preserved in messages table, found %d entries", countInMessages)
 	}
 }
+
+func TestExpungeCommand_ReadOnly(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	mailboxID, _ := server.GetMailboxID(t, database, state.UserID, "INBOX")
+
+	state.SelectedMailboxID = mailboxID
+	state.SelectedFolder = "INBOX"
+	state.ReadOnly = true
+
+	srv.HandleExpunge(conn, "E001", state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "E001 NO Mailbox is read-only") {
+		t.Errorf("Expected NO response for read-only mailbox, got: %s", response)
+	}
+}

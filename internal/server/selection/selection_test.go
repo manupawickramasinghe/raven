@@ -674,3 +674,53 @@ func TestCloseCommand_DatabaseError(t *testing.T) {
 		t.Error("SelectedMailboxID should be 0 after CLOSE")
 	}
 }
+
+func TestCloseCommand_ExamineReadOnly(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "testuser")
+	msgID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+	userDB := server.GetUserDBByID(t, database, userID)
+
+	// Mark message as deleted
+	_, _ = userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
+
+	state := &models.ClientState{
+		Authenticated: true,
+		UserID:        userID,
+		Username:      "testuser",
+	}
+
+	// Open with EXAMINE (Read-Only)
+	srv.HandleExamine(conn, "A001", []string{"A001", "EXAMINE", "INBOX"}, state)
+	if !state.ReadOnly {
+		t.Fatal("Expected state.ReadOnly to be true after EXAMINE")
+	}
+
+	conn.ClearWriteBuffer()
+	srv.HandleClose(conn, "C001", state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "C001 OK CLOSE completed") {
+		t.Errorf("Expected successful CLOSE, got: %s", response)
+	}
+
+	// Verify message was NOT expunged because it was read-only
+	var count int
+	_ = userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&count)
+	if count != 1 {
+		t.Errorf("Expected 1 message after CLOSE on read-only mailbox, got %d", count)
+	}
+
+	// Verify state is reset
+	if state.SelectedMailboxID != 0 {
+		t.Error("SelectedMailboxID should be 0 after CLOSE")
+	}
+	if state.ReadOnly {
+		t.Error("ReadOnly should be false after CLOSE")
+	}
+}
