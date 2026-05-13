@@ -604,7 +604,10 @@ func resolveDomainFromOrganizationUnit(authServerURL, orgUnitID, username, passw
 	log.Printf("LOGIN: resolving OU domain for org unit %s using bearer assertion", orgUnitID)
 
 	// Always prefer system assertion for OU reads because user-scoped assertions can be forbidden.
-	assertion := fetchSystemAssertion(baseURL)
+	assertion, err := fetchSystemAssertion(baseURL)
+	if err != nil {
+		log.Printf("LOGIN: system assertion unavailable: %v", err)
+	}
 	if assertion == "" {
 		log.Printf("LOGIN: system assertion unavailable, attempting OU resolution with user assertion")
 		assertion = fetchAssertion(baseURL, username, password)
@@ -639,9 +642,14 @@ func extractBaseURL(rawURL string) (string, error) {
 	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
-func fetchSystemAssertion(baseURL string) string {
-	username := getEnvOrDefault("IDP_SYSTEM_USERNAME", "admin")
-	password := getEnvOrDefault("IDP_SYSTEM_PASSWORD", "admin")
+func fetchSystemAssertion(baseURL string) (string, error) {
+	username := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
+	password := os.Getenv("IDP_SYSTEM_PASSWORD")
+
+	if username == "" || password == "" {
+		return "", fmt.Errorf("system assertion credentials are not configured")
+	}
+
 	log.Printf("LOGIN: requesting system assertion for OU resolution using configured system identity")
 
 	assertion := fetchAssertion(baseURL, username, password)
@@ -649,7 +657,7 @@ func fetchSystemAssertion(baseURL string) string {
 		log.Printf("LOGIN: failed to obtain system assertion using configured IDP system credentials")
 	}
 
-	return assertion
+	return assertion, nil
 }
 
 func fetchAssertion(baseURL, username, password string) string {
@@ -684,7 +692,8 @@ func fetchAssertion(baseURL, username, password string) string {
 	}
 
 	if err := postJSON(baseURL+"/flow/execute", payload, "", &result); err != nil {
-		log.Printf("LOGIN: flow execute failed for user %s: %v", username, err)
+		safeUsername := strings.ReplaceAll(strings.ReplaceAll(username, "\n", "\\n"), "\r", "\\r")
+		log.Printf("LOGIN: flow execute failed for user %s: %v", safeUsername, err)
 		return ""
 	}
 
@@ -834,14 +843,6 @@ func buildAuthHTTPClient() *http.Client {
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
 		Timeout:   10 * time.Second,
 	}
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-
-	return defaultValue
 }
 
 // ===== HANDLE SSL CONNECTION =====
