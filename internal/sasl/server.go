@@ -28,6 +28,14 @@ const (
 	ConnectionTypeUnixSocket
 )
 
+
+// authState tracks multi-step authentication state
+type authState struct {
+	Mechanism string
+	Step      int
+	Username  string
+}
+
 // Server represents a SASL authentication server
 type Server struct {
 	socketPath   string
@@ -261,6 +269,7 @@ func (s *Server) handleConnection(conn net.Conn, connType ConnectionType) {
 	defer func() { _ = conn.Close() }()
 
 	scanner := bufio.NewScanner(conn)
+	authStates := make(map[string]*authState)
 
 	// Set read deadline to prevent hanging connections
 	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
@@ -316,7 +325,10 @@ func (s *Server) handleConnection(conn net.Conn, connType ConnectionType) {
 			log.Printf("SASL sent: %s", strings.TrimSpace(response))
 
 		case "AUTH":
-			s.handleAuth(conn, parts)
+			s.handleAuth(conn, parts, authStates)
+
+		case "CONT":
+			s.handleCont(conn, parts, authStates)
 
 		default:
 			// Sanitize command for logging to prevent log injection
@@ -335,7 +347,7 @@ func (s *Server) handleConnection(conn net.Conn, connType ConnectionType) {
 }
 
 // handleAuth handles authentication requests
-func (s *Server) handleAuth(conn net.Conn, parts []string) {
+func (s *Server) handleAuth(conn net.Conn, parts []string, authStates map[string]*authState) {
 	// AUTH format: AUTH\t<id>\t<mechanism>\t[service=<service>]\t[resp=<base64>]
 	// Example: AUTH	1	PLAIN	service=smtp	resp=AHRlc3RAdGVzdC5jb20AdGVzdDEyMw==
 
@@ -365,11 +377,11 @@ func (s *Server) handleAuth(conn net.Conn, parts []string) {
 
 	switch strings.ToUpper(mechanism) {
 	case "PLAIN":
-		s.handlePlain(conn, id, resp, respProvided)
+		s.handlePlain(conn, id, resp, respProvided, authStates)
 	case "LOGIN":
-		s.handleLogin(conn, id, resp)
+		s.handleLogin(conn, id, resp, authStates)
 	case "OAUTHBEARER", "XOAUTH2":
-		s.handleOAuthBearer(conn, id, resp, respProvided)
+		s.handleOAuthBearer(conn, id, resp, respProvided, strings.ToUpper(mechanism), authStates)
 	default:
 		// Unsupported mechanism
 		response := fmt.Sprintf("FAIL\t%s\treason=Unsupported mechanism\n", id)
@@ -379,9 +391,10 @@ func (s *Server) handleAuth(conn net.Conn, parts []string) {
 }
 
 // handlePlain handles PLAIN authentication mechanism
-func (s *Server) handlePlain(conn net.Conn, id, resp string, respProvided bool) {
+func (s *Server) handlePlain(conn net.Conn, id, resp string, respProvided bool, authStates map[string]*authState) {
 	// If no response provided, request it
 	if !respProvided {
+		authStates[id] = &authState{Mechanism: "PLAIN", Step: 1}
 		response := fmt.Sprintf("CONT\t%s\t\n", id)
 		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
@@ -445,31 +458,40 @@ func (s *Server) handlePlain(conn net.Conn, id, resp string, respProvided bool) 
 }
 
 // handleLogin handles LOGIN authentication mechanism
-func (s *Server) handleLogin(conn net.Conn, id, resp string) {
-	// LOGIN is a two-step process
-	// Step 1: Request username
-	// Step 2: Request password
-
-	// For simplicity, we'll treat it similar to PLAIN for now
-	// In a full implementation, you'd need to maintain state between requests
-
+func (s *Server) handleLogin(conn net.Conn, id, resp string, authStates map[string]*authState) {
 	if resp == "" {
 		// Request username
+		authStates[id] = &authState{Mechanism: "LOGIN", Step: 1}
 		response := fmt.Sprintf("CONT\t%s\tUsername:\n", id)
 		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
 	}
 
-	// This is a simplified implementation
-	// A full LOGIN implementation would require state management
-	response := fmt.Sprintf("FAIL\t%s\treason=LOGIN not fully implemented, use PLAIN\n", id)
+	// If response was provided with AUTH command (initial response for username)
+	decoded, err := base64.StdEncoding.DecodeString(resp)
+	if err != nil {
+		log.Printf("Failed to decode base64 response: %v", err)
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid encoding\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	authStates[id] = &authState{
+		Mechanism: "LOGIN",
+		Step:      2,
+		Username:  string(decoded),
+	}
+
+	response := fmt.Sprintf("CONT\t%s\tPassword:\n", id)
 	_, _ = conn.Write([]byte(response))
 	log.Printf("SASL sent: %s", strings.TrimSpace(response))
 }
 
-func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided bool) {
+func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided bool, mechanism string, authStates map[string]*authState) {
 	if !respProvided {
+		authStates[id] = &authState{Mechanism: mechanism, Step: 1}
 		response := fmt.Sprintf("CONT\t%s\t\n", id)
 		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
@@ -603,4 +625,96 @@ func (s *Server) authenticate(username, password string) bool {
 	// #nosec G706 -- authUsername is sanitized by caller, status code is int
 	log.Printf("Authentication API returned status %d for user: %s", resp.StatusCode, authUsername)
 	return false
+}
+
+
+// handleCont handles continuation requests
+func (s *Server) handleCont(conn net.Conn, parts []string, authStates map[string]*authState) {
+	// CONT format: CONT	<id>	<resp>
+	if len(parts) < 3 {
+		log.Printf("Invalid CONT command format, parts: %d", len(parts))
+		return
+	}
+
+	id := parts[1]
+	resp := parts[2]
+
+	state, ok := authStates[id]
+	if !ok {
+		response := fmt.Sprintf("FAIL\t%s\treason=No active authentication flow\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	switch state.Mechanism {
+	case "PLAIN":
+		delete(authStates, id)
+		s.handlePlain(conn, id, resp, true, authStates)
+	case "LOGIN":
+		s.handleLoginCont(conn, id, resp, state, authStates)
+	case "OAUTHBEARER", "XOAUTH2":
+		mechanism := state.Mechanism
+		delete(authStates, id)
+		s.handleOAuthBearer(conn, id, resp, true, mechanism, authStates)
+	default:
+		delete(authStates, id)
+		response := fmt.Sprintf("FAIL\t%s\treason=Unsupported mechanism in CONT\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+	}
+}
+
+// handleLoginCont handles continuation requests for LOGIN mechanism
+func (s *Server) handleLoginCont(conn net.Conn, id, resp string, state *authState, authStates map[string]*authState) {
+	if resp == "" {
+		delete(authStates, id)
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials format\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(resp)
+	if err != nil {
+		delete(authStates, id)
+		log.Printf("Failed to decode base64 response: %v", err)
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid encoding\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	if state.Step == 1 {
+		// Received username, ask for password
+		state.Username = string(decoded)
+		state.Step = 2
+
+		response := fmt.Sprintf("CONT\t%s\tPassword:\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+	} else if state.Step == 2 {
+		// Received password, authenticate
+		delete(authStates, id)
+		password := string(decoded)
+
+		log.Printf("LOGIN authentication attempt for user: %s", state.Username)
+
+		if s.authenticate(state.Username, password) {
+			response := fmt.Sprintf("OK\t%s\tuser=%s\n", id, state.Username)
+			_, _ = conn.Write([]byte(response))
+			log.Printf("SASL sent: %s", strings.TrimSpace(response))
+			log.Printf("Authentication successful for user: %s", state.Username)
+		} else {
+			response := fmt.Sprintf("FAIL\t%s\tuser=%s\treason=Invalid credentials\n", id, state.Username)
+			_, _ = conn.Write([]byte(response))
+			log.Printf("SASL sent: %s", strings.TrimSpace(response))
+			log.Printf("Authentication failed for user: %s", state.Username)
+		}
+	} else {
+		delete(authStates, id)
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid state\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+	}
 }
