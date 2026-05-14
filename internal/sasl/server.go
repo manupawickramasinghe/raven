@@ -685,7 +685,8 @@ func (s *Server) handleLoginCont(conn net.Conn, id, resp string, state *authStat
 		return
 	}
 
-	if state.Step == 1 {
+	switch state.Step {
+	case 1:
 		// Received username, ask for password
 		state.Username = string(decoded)
 		state.Step = 2
@@ -693,7 +694,7 @@ func (s *Server) handleLoginCont(conn net.Conn, id, resp string, state *authStat
 		response := fmt.Sprintf("CONT\t%s\tPassword:\n", id)
 		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
-	} else if state.Step == 2 {
+	case 2:
 		// Received password, authenticate
 		delete(authStates, id)
 		password := string(decoded)
@@ -711,7 +712,7 @@ func (s *Server) handleLoginCont(conn net.Conn, id, resp string, state *authStat
 			log.Printf("SASL sent: %s", strings.TrimSpace(response))
 			log.Printf("Authentication failed for user: %s", state.Username)
 		}
-	} else {
+	default:
 		delete(authStates, id)
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid state\n", id)
 		_, _ = conn.Write([]byte(response))
