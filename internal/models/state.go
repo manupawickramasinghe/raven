@@ -16,4 +16,5 @@ type ClientState struct {
 	LastRecentCount    int    // Last known recent (unseen) message count
 	UIDValidity        int64  // UID validity for selected mailbox
 	UIDNext            int64  // Next UID for selected mailbox
+	ReadOnly           bool   // Whether the mailbox was opened in read-only mode (EXAMINE)
 }
