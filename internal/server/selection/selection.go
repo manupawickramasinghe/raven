@@ -119,6 +119,7 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	// Determine if this is SELECT or EXAMINE
 	cmd := strings.ToUpper(parts[1])
 	isExamine := (cmd == "EXAMINE")
+	state.ReadOnly = isExamine
 
 	// Send REQUIRED untagged responses in the correct order per RFC 3501
 	// For SELECT: FLAGS, EXISTS, RECENT
@@ -178,43 +179,35 @@ func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 
 	// Important: Per RFC 3501, if mailbox is read-only (selected with EXAMINE),
 	// no messages are removed and no error is given.
-	// Since we don't currently track read-only state in ClientState,
-	// we always perform the expunge operation.
-	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
+	if !state.ReadOnly {
+		// Get user database
+		userDB, err := deps.GetUserDB(resolveStateEmail(state))
+		if err == nil {
+			// Delete all messages with \Deleted flag from the mailbox
+			// Query for all messages with \Deleted flag in the current mailbox
+			rows, err := userDB.Query(`
+				SELECT id FROM message_mailbox
+				WHERE mailbox_id = ? AND flags LIKE '%\Deleted%'
+			`, state.SelectedMailboxID)
 
-	// Get user database
-	userDB, err := deps.GetUserDB(resolveStateEmail(state))
-	if err != nil {
-		// Clear selection and return
-		state.SelectedMailboxID = 0
-		state.SelectedFolder = ""
-		deps.SendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
-		return
-	}
+			if err == nil {
+				defer func() { _ = rows.Close() }()
 
-	// Delete all messages with \Deleted flag from the mailbox
-	// Query for all messages with \Deleted flag in the current mailbox
-	rows, err := userDB.Query(`
-		SELECT id FROM message_mailbox
-		WHERE mailbox_id = ? AND flags LIKE '%\Deleted%'
-	`, state.SelectedMailboxID)
+				// Collect all message_mailbox IDs to delete
+				var idsToDelete []int64
+				for rows.Next() {
+					var id int64
+					if err := rows.Scan(&id); err == nil {
+						idsToDelete = append(idsToDelete, id)
+					}
+				}
 
-	if err == nil {
-		defer func() { _ = rows.Close() }()
-
-		// Collect all message_mailbox IDs to delete
-		var idsToDelete []int64
-		for rows.Next() {
-			var id int64
-			if err := rows.Scan(&id); err == nil {
-				idsToDelete = append(idsToDelete, id)
+				// Delete the messages from message_mailbox table
+				// This removes them from the mailbox but keeps the message data
+				for _, id := range idsToDelete {
+					_, _ = userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, id)
+				}
 			}
-		}
-
-		// Delete the messages from message_mailbox table
-		// This removes them from the mailbox but keeps the message data
-		for _, id := range idsToDelete {
-			_, _ = userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, id)
 		}
 	}
 
@@ -225,6 +218,7 @@ func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 	state.LastRecentCount = 0
 	state.UIDValidity = 0
 	state.UIDNext = 0
+	state.ReadOnly = false
 
 	// Always complete successfully per RFC 3501
 	deps.SendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
@@ -251,5 +245,6 @@ func HandleUnselect(deps ServerDeps, conn net.Conn, tag string, state *models.Cl
 	state.LastRecentCount = 0
 	state.UIDValidity = 0
 	state.UIDNext = 0
+	state.ReadOnly = false
 	deps.SendResponse(conn, fmt.Sprintf("%s OK UNSELECT completed", tag))
 }
