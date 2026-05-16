@@ -633,6 +633,8 @@ func (s *Server) handleCont(conn net.Conn, parts []string, authStates map[string
 	// CONT format: CONT	<id>	<resp>
 	if len(parts) < 3 {
 		log.Printf("Invalid CONT command format, parts: %d", len(parts))
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid command format\n", parts[1])
+		_, _ = conn.Write([]byte(response))
 		return
 	}
 
