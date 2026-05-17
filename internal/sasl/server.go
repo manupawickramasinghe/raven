@@ -26,6 +26,9 @@ const (
 	ConnectionTypeTCP ConnectionType = iota
 	// ConnectionTypeUnixSocket represents a Unix domain socket connection
 	ConnectionTypeUnixSocket
+
+	// maxAuthStatesPerConn limits concurrent auth attempts per connection to prevent DoS
+	maxAuthStatesPerConn = 10
 )
 
 
@@ -375,6 +378,14 @@ func (s *Server) handleAuth(conn net.Conn, parts []string, authStates map[string
 
 	log.Printf("Service: %s, Response present: %v", service, respProvided)
 
+	// Limit concurrent auth attempts per connection (DoS protection)
+	if !respProvided && len(authStates) >= maxAuthStatesPerConn {
+		response := fmt.Sprintf("FAIL\t%s\treason=Too many authentication attempts\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
 	switch strings.ToUpper(mechanism) {
 	case "PLAIN":
 		s.handlePlain(conn, id, resp, respProvided, authStates)
@@ -633,7 +644,11 @@ func (s *Server) handleCont(conn net.Conn, parts []string, authStates map[string
 	// CONT format: CONT	<id>	<resp>
 	if len(parts) < 3 {
 		log.Printf("Invalid CONT command format, parts: %d", len(parts))
-		response := fmt.Sprintf("FAIL\t%s\treason=Invalid command format\n", parts[1])
+		id := ""
+		if len(parts) >= 2 {
+			id = parts[1]
+		}
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid command format\n", id)
 		_, _ = conn.Write([]byte(response))
 		return
 	}
