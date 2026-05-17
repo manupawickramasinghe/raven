@@ -75,6 +75,8 @@ func TestExtractJWTExpiry(t *testing.T) {
 }
 
 func TestGroupResolverAuthentication(t *testing.T) {
+	t.Setenv("IDP_SYSTEM_USERNAME", "admin")
+	t.Setenv("IDP_SYSTEM_PASSWORD", "admin")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/flow/execute" && r.Method == http.MethodPost {
 			var reqBody map[string]interface{}
@@ -122,6 +124,8 @@ func TestGroupResolverAuthentication(t *testing.T) {
 }
 
 func TestGroupMemberResolution(t *testing.T) {
+	t.Setenv("IDP_SYSTEM_USERNAME", "admin")
+	t.Setenv("IDP_SYSTEM_PASSWORD", "admin")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/flow/execute":
@@ -240,6 +244,8 @@ func TestGroupMemberResolution(t *testing.T) {
 }
 
 func TestGroupNotFound(t *testing.T) {
+	t.Setenv("IDP_SYSTEM_USERNAME", "admin")
+	t.Setenv("IDP_SYSTEM_PASSWORD", "admin")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/flow/execute":
