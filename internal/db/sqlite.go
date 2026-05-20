@@ -997,7 +997,7 @@ func AddAddresses(db *sql.DB, messageID int64, addressType string, addresses []E
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for i, addr := range addresses {
 		_, err := stmt.Exec(messageID, addressType, addr.Name, addr.Email, i)
