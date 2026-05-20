@@ -409,7 +409,7 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 		deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 		return
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	// Fetch messages in batches to avoid SQLite variable limits (usually 999 or 32766)
 	batchSize := 900
@@ -433,7 +433,7 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 			FROM message_mailbox
 			WHERE mailbox_id = ? AND uid IN (%s)
 			ORDER BY uid ASC
-		`, strings.Join(placeholders, ","))
+		`, strings.Join(placeholders, ",")) // #nosec G201 -- IN clause placeholders are safe, dynamically sized
 
 		rows, err := tx.Query(query, args...)
 		if err != nil {
@@ -448,7 +448,7 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 			var flags, internalDate string
 
 			if err := rows.Scan(&uid, &messageID, &flags, &internalDate); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 				return
 			}
@@ -466,7 +466,7 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 			// Insert message into destination mailbox
 			_, err = stmt.Exec(messageID, destMailboxID, nextUID, copyFlags, internalDate)
 			if err != nil {
-				rows.Close()
+				_ = rows.Close()
 				deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 				return
 			}
@@ -475,11 +475,11 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 		}
 
 		if err := rows.Err(); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 			return
 		}
-		rows.Close()
+		_ = rows.Close()
 	}
 
 	// Commit transaction
