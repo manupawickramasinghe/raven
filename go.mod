@@ -1,6 +1,6 @@
 module raven
 
-go 1.25.0
+go 1.24.3
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.6
@@ -10,7 +10,6 @@ require (
 	github.com/aws/smithy-go v1.25.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/mattn/go-sqlite3 v1.14.32
-	golang.org/x/sync v0.20.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -29,4 +28,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.5 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

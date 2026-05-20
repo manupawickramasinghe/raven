@@ -965,12 +965,48 @@ func GetMessageFlags(db *sql.DB, mailboxID, messageID int64) (string, error) {
 
 // Address management functions
 
+// EmailAddress represents a single email address for database operations
+type EmailAddress struct {
+	Name  string
+	Email string
+}
+
 func AddAddress(db *sql.DB, messageID int64, addressType, name, email string, sequence int) error {
 	_, err := db.Exec(`
 		INSERT INTO addresses (message_id, address_type, name, email, sequence)
 		VALUES (?, ?, ?, ?, ?)
 	`, messageID, addressType, name, email, sequence)
 	return err
+}
+
+func AddAddresses(db *sql.DB, messageID int64, addressType string, addresses []EmailAddress) error {
+	if len(addresses) == 0 {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO addresses (message_id, address_type, name, email, sequence)
+		VALUES (?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for i, addr := range addresses {
+		_, err := stmt.Exec(messageID, addressType, addr.Name, addr.Email, i)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func GetMessageAddresses(db *sql.DB, messageID int64, addressType string) ([]string, error) {
