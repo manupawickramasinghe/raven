@@ -400,44 +400,86 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 		return
 	}
 
-	// Copy each message by UID
-	for _, uid := range uids {
-		var messageID int64
-		var flags, internalDate string
+	// Prepare the insert statement for better performance in the loop
+	stmt, err := tx.Prepare(`
+		INSERT INTO message_mailbox (message_id, mailbox_id, uid, flags, internal_date)
+		VALUES (?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
+		return
+	}
+	defer stmt.Close()
 
-		err = tx.QueryRow(`
-			SELECT message_id, flags, internal_date
+	// Fetch messages in batches to avoid SQLite variable limits (usually 999 or 32766)
+	batchSize := 900
+	for i := 0; i < len(uids); i += batchSize {
+		end := i + batchSize
+		if end > len(uids) {
+			end = len(uids)
+		}
+		batch := uids[i:end]
+
+		placeholders := make([]string, len(batch))
+		args := make([]interface{}, len(batch)+1)
+		args[0] = state.SelectedMailboxID
+		for j, uid := range batch {
+			placeholders[j] = "?"
+			args[j+1] = uid
+		}
+
+		query := fmt.Sprintf(`
+			SELECT uid, message_id, flags, internal_date
 			FROM message_mailbox
-			WHERE mailbox_id = ? AND uid = ?
-		`, state.SelectedMailboxID, uid).Scan(&messageID, &flags, &internalDate)
+			WHERE mailbox_id = ? AND uid IN (%s)
+			ORDER BY uid ASC
+		`, strings.Join(placeholders, ","))
 
-		if err != nil {
-			// Non-existent UID is silently ignored
-			continue
-		}
-
-		// Prepare flags for copy - preserve existing flags and add \Recent
-		copyFlags := flags
-		if !strings.Contains(copyFlags, `\Recent`) {
-			if copyFlags == "" {
-				copyFlags = `\Recent`
-			} else {
-				copyFlags = copyFlags + ` \Recent`
-			}
-		}
-
-		// Insert message into destination mailbox
-		_, err = tx.Exec(`
-			INSERT INTO message_mailbox (message_id, mailbox_id, uid, flags, internal_date)
-			VALUES (?, ?, ?, ?, ?)
-		`, messageID, destMailboxID, nextUID, copyFlags, internalDate)
-
+		rows, err := tx.Query(query, args...)
 		if err != nil {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 			return
 		}
 
-		nextUID++
+		// Copy each message that exists in this batch
+		for rows.Next() {
+			var uid uint32 // not strictly needed, but let's read it to be safe
+			var messageID int64
+			var flags, internalDate string
+
+			if err := rows.Scan(&uid, &messageID, &flags, &internalDate); err != nil {
+				rows.Close()
+				deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
+				return
+			}
+
+			// Prepare flags for copy - preserve existing flags and add \Recent
+			copyFlags := flags
+			if !strings.Contains(copyFlags, `\Recent`) {
+				if copyFlags == "" {
+					copyFlags = `\Recent`
+				} else {
+					copyFlags = copyFlags + ` \Recent`
+				}
+			}
+
+			// Insert message into destination mailbox
+			_, err = stmt.Exec(messageID, destMailboxID, nextUID, copyFlags, internalDate)
+			if err != nil {
+				rows.Close()
+				deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
+				return
+			}
+
+			nextUID++
+		}
+
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
+			return
+		}
+		rows.Close()
 	}
 
 	// Commit transaction
