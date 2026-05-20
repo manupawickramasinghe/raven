@@ -306,35 +306,9 @@ func RenameMailboxPerUser(db *sql.DB, oldName, newName string) error {
 
 	// Rename all hierarchical children
 	hierarchyPattern := oldName + "/%"
-	rows, err := tx.Query("SELECT id, name FROM mailboxes WHERE name LIKE ?", hierarchyPattern)
+	_, err = tx.Exec("UPDATE mailboxes SET name = ? || SUBSTR(name, length(?) + 1) WHERE name LIKE ?", newName, oldName, hierarchyPattern)
 	if err != nil {
 		return err
-	}
-	defer func() { _ = rows.Close() }()
-
-	type mailboxUpdate struct {
-		id      int64
-		newName string
-	}
-	var updates []mailboxUpdate
-
-	for rows.Next() {
-		var id int64
-		var childName string
-		if err := rows.Scan(&id, &childName); err != nil {
-			return err
-		}
-		newChildName := newName + childName[len(oldName):]
-		updates = append(updates, mailboxUpdate{id: id, newName: newChildName})
-	}
-	_ = rows.Close()
-
-	// Apply all updates
-	for _, update := range updates {
-		_, err = tx.Exec("UPDATE mailboxes SET name = ? WHERE id = ?", update.newName, update.id)
-		if err != nil {
-			return err
-		}
 	}
 
 	return tx.Commit()
