@@ -217,6 +217,8 @@ func buildPartStructure(partMsg string) string {
 			// Strip the "BODYSTRUCTURE " prefix to get just the structure
 			return strings.TrimPrefix(fullStruct, "BODYSTRUCTURE ")
 		}
+		// If boundary is missing for a nested multipart, use fallback
+		return strings.TrimPrefix(buildFallbackBodyStructure(mainType, subType), "BODYSTRUCTURE ")
 	}
 
 	// Get encoding
