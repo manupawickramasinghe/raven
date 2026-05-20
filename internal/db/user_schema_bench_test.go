@@ -7,7 +7,7 @@ import (
 
 func BenchmarkRenameMailboxPerUser_WithManyChildren(b *testing.B) {
 	db := setupTestDBPerUser(&testing.T{})
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create parent
 	_, _ = CreateMailboxPerUser(db, "Parent", "")
@@ -38,7 +38,7 @@ func BenchmarkRenameMailboxPerUser_WithManyChildren(b *testing.B) {
 
 func BenchmarkRenameMailboxPerUser_WithManyChildren_Optimized(b *testing.B) {
 	db := setupTestDBPerUser(&testing.T{})
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create parent
 	_, _ = CreateMailboxPerUser(db, "Parent", "")
