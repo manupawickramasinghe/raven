@@ -225,22 +225,16 @@ func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
 		contentType = "text/plain; charset=us-ascii"
 	}
 
-	fmt.Printf("DEBUG ParseMIMEMessage: Content-Type='%s'\n", contentType)
-
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		fmt.Printf("DEBUG ParseMIMEMessage: Failed to parse Content-Type: %v\n", err)
 		mediaType = "text/plain"
 		params = map[string]string{"charset": "us-ascii"}
 	}
-
-	fmt.Printf("DEBUG ParseMIMEMessage: mediaType='%s', boundary='%s'\n", mediaType, params["boundary"])
 
 	// Handle multipart messages
 	if strings.HasPrefix(mediaType, "multipart/") {
 		boundary := params["boundary"]
 		if boundary != "" {
-			fmt.Printf("DEBUG ParseMIMEMessage: Parsing multipart with boundary='%s'\n", boundary)
 
 			// Initialize parts list and add the root multipart container as the first part
 			parsed.Parts = []MessagePart{{
@@ -260,16 +254,11 @@ func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
 			rootIdx := 0
 			err = parseMultipart(msg.Body, boundary, 0, &rootIdx, &parsed.Parts)
 			if err != nil {
-				fmt.Printf("DEBUG ParseMIMEMessage: multipart parsing failed: %v\n", err)
 				return nil, fmt.Errorf("failed to parse multipart: %v", err)
 			}
-			fmt.Printf("DEBUG ParseMIMEMessage: Successfully parsed %d parts (including root container)\n", len(parsed.Parts))
-		} else {
-			fmt.Printf("DEBUG ParseMIMEMessage: multipart detected but no boundary!\n")
 		}
 	} else {
 		// Single part message
-		fmt.Printf("DEBUG ParseMIMEMessage: Single-part message (not multipart)\n")
 		bodyBytes, err := io.ReadAll(msg.Body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read body: %v", err)
