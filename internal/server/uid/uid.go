@@ -614,7 +614,8 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 			placeholders[j] = "?"
 		}
 
-		query := fmt.Sprintf("DELETE FROM message_mailbox WHERE id IN (%s)", strings.Join(placeholders, ","))
+		// #nosec G202 -- placeholder list is generated internally and contains only "?" placeholders
+		query := "DELETE FROM message_mailbox WHERE id IN (" + strings.Join(placeholders, ",") + ")"
 		_, err = targetDB.Exec(query, batch...)
 		if err != nil {
 			log.Printf("Failed to batch delete messages: %v", err)
