@@ -31,7 +31,6 @@ const (
 	maxAuthStatesPerConn = 10
 )
 
-
 // authState tracks multi-step authentication state
 type authState struct {
 	Mechanism string
@@ -41,19 +40,19 @@ type authState struct {
 
 // Server represents a SASL authentication server
 type Server struct {
-	socketPath   string
-	tcpAddr      string
-	authURL      string
-	domain       string
-	saslScope    conf.SASLScope
-	oauthConfig  *conf.Config
+	socketPath     string
+	tcpAddr        string
+	authURL        string
+	domain         string
+	saslScope      conf.SASLScope
+	oauthConfig    *conf.Config
 	oauthValidator *oauthbearer.Validator
-	unixListener net.Listener
-	tcpListener  net.Listener
-	mu           sync.Mutex
-	wg           sync.WaitGroup
-	shutdown     chan struct{}
-	shutdownOnce sync.Once
+	unixListener   net.Listener
+	tcpListener    net.Listener
+	mu             sync.Mutex
+	wg             sync.WaitGroup
+	shutdown       chan struct{}
+	shutdownOnce   sync.Once
 }
 
 // NewServer creates a new SASL authentication server
@@ -651,7 +650,6 @@ func (s *Server) authenticate(username, password string) bool {
 	log.Printf("Authentication API returned status %d for user: %s", resp.StatusCode, authUsername)
 	return false
 }
-
 
 // handleCont handles continuation requests
 func (s *Server) handleCont(conn net.Conn, parts []string, authStates map[string]*authState) {
