@@ -1585,7 +1585,10 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 
 	// Important: Per RFC 3501, if mailbox is read-only (selected with EXAMINE),
 	// EXPUNGE should return NO
-	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
+	if state.ReadOnly {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: mailbox is read-only", tag))
+		return
+	}
 
 	// Get user database
 	userDB, err := deps.GetUserDB(resolveStateEmail(state))

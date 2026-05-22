@@ -8,6 +8,32 @@ import (
 	"raven/internal/server"
 )
 
+// TestExpungeCommand_ReadOnly tests EXPUNGE when mailbox is read-only
+func TestExpungeCommand_ReadOnly(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "testuser")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		Username:          "testuser",
+		SelectedMailboxID: mailboxID,
+		SelectedFolder:    "INBOX",
+		ReadOnly:          true, // Set to ReadOnly (EXAMINE)
+	}
+
+	srv.HandleExpunge(conn, "E009", state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "E009 NO EXPUNGE failed: mailbox is read-only") {
+		t.Errorf("Expected NO response for EXPUNGE on read-only mailbox, got: %s", response)
+	}
+}
+
 // TestExpungeCommand_Unauthenticated tests EXPUNGE before authentication
 func TestExpungeCommand_Unauthenticated(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
