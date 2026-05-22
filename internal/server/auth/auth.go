@@ -646,8 +646,14 @@ func extractBaseURL(rawURL string) (string, error) {
 }
 
 func fetchSystemAssertion(baseURL string) string {
-	username := getEnvOrDefault("IDP_SYSTEM_USERNAME", "admin")
-	password := getEnvOrDefault("IDP_SYSTEM_PASSWORD", "admin")
+	username := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
+	password := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
+
+	if username == "" || password == "" {
+		log.Printf("LOGIN: IDP_SYSTEM_USERNAME or IDP_SYSTEM_PASSWORD not configured, cannot fetch system assertion")
+		return ""
+	}
+
 	log.Printf("LOGIN: requesting system assertion for OU resolution using configured system identity")
 
 	assertion := fetchAssertion(baseURL, username, password)
@@ -690,7 +696,8 @@ func fetchAssertion(baseURL, username, password string) string {
 	}
 
 	if err := postJSON(baseURL+"/flow/execute", payload, "", &result); err != nil {
-		log.Printf("LOGIN: flow execute failed for user %s: %v", username, err)
+		sanitizedUser := strings.ReplaceAll(strings.ReplaceAll(username, "\n", ""), "\r", "")
+		log.Printf("LOGIN: flow execute failed for user %s: %v", sanitizedUser, err)
 		return ""
 	}
 
