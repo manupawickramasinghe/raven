@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"raven/internal/db"
 	"raven/internal/models"
 	"raven/internal/server"
 )
@@ -61,6 +62,42 @@ func TestExpungeCommand_AuthenticatedNoMailbox(t *testing.T) {
 }
 
 // TestExpungeCommand_NoDeletedMessages tests EXPUNGE with no deleted messages
+func TestExpungeCommand_Examine(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "testuser")
+
+	msgID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	server.UpdateMessageFlags(t, database, "testuser", msgID, "\\Deleted")
+
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		Username:          "testuser",
+		SelectedMailboxID: mailboxID,
+		SelectedFolder:    "INBOX",
+		ReadOnly:          true,
+	}
+
+	srv.HandleExpunge(conn, "E005", state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "E005 NO Mailbox is read-only") {
+		t.Errorf("Expected NO response for read-only mailbox, got: %s", response)
+	}
+
+	userDB := server.GetUserDBFromManager(t, database, "testuser")
+	count, _ := db.GetMessageCount(userDB, mailboxID)
+
+	if count != 1 {
+		t.Errorf("Expected 1 message to remain in read-only mode, got %d", count)
+	}
+}
+
 func TestExpungeCommand_NoDeletedMessages(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
