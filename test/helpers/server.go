@@ -776,8 +776,8 @@ func SetupMockAuthServerWithResponse(t *testing.T, statusCode int, response stri
 		_, _ = w.Write([]byte(response))
 	})
 
-	// Create TLS server for more realistic testing
-	mock.Server = httptest.NewTLSServer(handler)
+	// Create regular HTTP server since testing certificate validation from sasl/server is not configured for test certs
+	mock.Server = httptest.NewServer(handler)
 
 	t.Logf("Mock auth server started at: %s", mock.URL)
 	return mock

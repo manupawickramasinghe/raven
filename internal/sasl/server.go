@@ -3,7 +3,6 @@ package sasl
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -623,12 +622,8 @@ func (s *Server) authenticate(username, password string) bool {
 	req.Header.Set("Content-Type", "application/json")
 
 	// Create HTTP client with TLS config
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true, // #nosec G402 -- Required for internal auth server communication, matches IMAP server behavior
-	}
-	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{
-		Transport: transport,
+		Transport: http.DefaultTransport,
 		Timeout:   10 * time.Second,
 	}
 
