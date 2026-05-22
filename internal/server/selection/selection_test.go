@@ -298,6 +298,60 @@ func TestExamineCommand_MissingFolderName(t *testing.T) {
 // CLOSE Command Tests
 // ============================================================================
 
+func TestCloseCommand_ReadOnly(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+
+	mailboxID, err := server.GetMailboxID(t, database, state.UserID, "INBOX")
+	if err != nil {
+		t.Fatalf("Failed to get INBOX mailbox: %v", err)
+	}
+	state.SelectedMailboxID = mailboxID
+	state.SelectedFolder = "INBOX"
+
+	// Insert a test message and mark it deleted
+	msgID := server.InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
+
+	userDB := server.GetUserDBByID(t, database, state.UserID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msgID); err != nil {
+		t.Fatalf("Failed to mark message as deleted: %v", err)
+	}
+
+	// Set read-only state, like EXAMINE does
+	state.ReadOnly = true
+
+	// Call CLOSE
+	srv.HandleClose(conn, "A001", state)
+
+	response := conn.GetWrittenData()
+
+	// CLOSE should still return OK
+	if !strings.Contains(response, "A001 OK CLOSE completed") {
+		t.Errorf("Expected CLOSE to succeed even when read-only, got: %s", response)
+	}
+
+	// Message should NOT be expunged because of ReadOnly flag
+	var count int
+	err = userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to check message count: %v", err)
+	}
+	if count == 0 {
+		t.Errorf("Expected message to NOT be deleted because of ReadOnly flag")
+	}
+
+	// ReadOnly flag should be reset
+	if state.ReadOnly {
+		t.Errorf("Expected ReadOnly flag to be reset after CLOSE")
+	}
+	if state.SelectedMailboxID != 0 {
+		t.Errorf("Expected SelectedMailboxID to be reset after CLOSE")
+	}
+}
+
 func TestCloseCommand_Unauthenticated(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()

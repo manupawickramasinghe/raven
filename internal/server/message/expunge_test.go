@@ -351,6 +351,30 @@ func TestExpungeCommand_TagHandling(t *testing.T) {
 	}
 }
 
+// TestExpungeCommand_ReadOnly tests EXPUNGE when the mailbox is read-only
+func TestExpungeCommand_ReadOnly(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	mailboxID, err := server.GetMailboxID(t, database, state.UserID, "INBOX")
+	if err != nil {
+		t.Fatalf("Failed to get INBOX mailbox: %v", err)
+	}
+	state.SelectedMailboxID = mailboxID
+	state.SelectedFolder = "INBOX"
+	state.ReadOnly = true // Set read-only flag
+
+	srv.HandleExpunge(conn, "A001", state)
+
+	response := conn.GetWrittenData()
+
+	if !strings.Contains(response, "A001 NO") {
+		t.Errorf("Expected EXPUNGE to fail with NO when mailbox is read-only, got: %s", response)
+	}
+}
+
 // TestExpungeCommand_RFC3501Compliance tests RFC 3501 compliance
 func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 	t.Run("Requires Selected state", func(t *testing.T) {
