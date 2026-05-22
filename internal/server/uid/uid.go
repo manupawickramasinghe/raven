@@ -499,6 +499,13 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 		return
 	}
 
+	// If the mailbox is read-only, UID EXPUNGE SHOULD return an OK response
+	// with no untagged EXPUNGE responses (RFC 4315)
+	if state.ReadOnly {
+		deps.SendResponse(conn, fmt.Sprintf("%s OK UID EXPUNGE completed", tag))
+		return
+	}
+
 	// Parse UID sequence set
 	uidSequence := parts[3]
 	uids := utils.ParseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)

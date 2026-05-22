@@ -643,6 +643,58 @@ func TestSelectCommand_SwitchingMailboxes(t *testing.T) {
 	}
 }
 
+func TestCloseCommand_ReadOnly(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "testuser")
+
+	// Insert messages
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+	userDB := server.GetUserDBByID(t, database, userID)
+
+	// Mark message 1 as deleted
+	_, _ = userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		Username:          "testuser",
+		SelectedMailboxID: mailboxID,
+		SelectedFolder:    "INBOX",
+		ReadOnly:          true, // Mailbox selected with EXAMINE
+	}
+
+	// Count messages before CLOSE
+	var countBefore int
+	_ = userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countBefore)
+	if countBefore != 1 {
+		t.Fatalf("Expected 1 message before CLOSE, got %d", countBefore)
+	}
+
+	srv.HandleClose(conn, "C006", state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "C006 OK CLOSE completed") {
+		t.Errorf("Expected successful CLOSE, got: %s", response)
+	}
+
+	// Count messages after CLOSE - should still be 1 because mailbox is read-only
+	var countAfter int
+	_ = userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter)
+	if countAfter != 1 {
+		t.Errorf("Expected 1 message after CLOSE on read-only mailbox, got %d", countAfter)
+	}
+
+	// Ensure ReadOnly is reset
+	if state.ReadOnly {
+		t.Error("ReadOnly flag should be false after CLOSE")
+	}
+}
+
 func TestCloseCommand_DatabaseError(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()

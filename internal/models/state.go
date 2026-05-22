@@ -11,6 +11,7 @@ type ClientState struct {
 	Email              string // Full email address from IDP (username@domain)
 	UserID             int64  // Deprecated: kept for backward-compatible tests
 	DomainID           int64  // Deprecated: kept for backward-compatible tests
+	ReadOnly           bool   // Whether the mailbox is selected as read-only (EXAMINE)
 	// Mailbox state tracking for NOOP and other commands
 	LastMessageCount   int    // Last known message count in selected folder
 	LastRecentCount    int    // Last known recent (unseen) message count
