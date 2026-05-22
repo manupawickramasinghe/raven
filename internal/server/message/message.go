@@ -1690,7 +1690,8 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 				ids[j] = msg.id
 			}
 
-			query := fmt.Sprintf("DELETE FROM message_mailbox WHERE id IN (%s)", strings.Join(placeholders, ","))
+			// #nosec G202 -- using string concatenation for IN clause placeholders, actual values are passed safely as args
+			query := "DELETE FROM message_mailbox WHERE id IN (" + strings.Join(placeholders, ",") + ")"
 			_, err = userDB.Exec(query, ids...)
 			if err != nil {
 				log.Printf("Error bulk deleting messages during EXPUNGE: %v", err)
