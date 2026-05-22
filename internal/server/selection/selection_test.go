@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"raven/internal/db"
 	"raven/internal/models"
 	"raven/internal/server"
 )
@@ -539,6 +540,42 @@ func TestUnselectCommand_NoExpunge(t *testing.T) {
 // ============================================================================
 // Additional Coverage Tests
 // ============================================================================
+
+func TestCloseCommand_Examine(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "testuser")
+
+	msgID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	server.UpdateMessageFlags(t, database, "testuser", msgID, "\\Deleted")
+
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		Username:          "testuser",
+		SelectedMailboxID: mailboxID,
+		SelectedFolder:    "INBOX",
+		ReadOnly:          true,
+	}
+
+	srv.HandleClose(conn, "C004", state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "C004 OK CLOSE completed") {
+		t.Errorf("Expected CLOSE to complete, got: %s", response)
+	}
+
+	userDB := server.GetUserDBFromManager(t, database, "testuser")
+	count, _ := db.GetMessageCount(userDB, mailboxID)
+
+	if count != 1 {
+		t.Errorf("Expected 1 message to remain in read-only mode, got %d", count)
+	}
+}
 
 func TestCloseCommand_DeletesMarkedMessages(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
