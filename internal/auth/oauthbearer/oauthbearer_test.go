@@ -420,15 +420,15 @@ func TestEvaluateRoleAccess_RejectsUnsafeComponents(t *testing.T) {
 	// characters that must never make it into the mailbox identity, even
 	// when the token roles claim happens to match.
 	cases := map[string]string{
-		"path traversal in domain":  "admin@..",
-		"double dot inside domain":  "admin@co..com",
-		"slash in domain":           "admin@co/com",
-		"backslash in domain":       "admin@co\\com",
-		"slash in local":            "ad/min@co.com",
-		"double dot in local":       "ad..min@co.com",
-		"non-ascii in domain":       "admin@cö.com",
-		"whitespace inside local":   "ad min@co.com",
-		"null byte in domain":       "admin@co.com\x00evil",
+		"path traversal in domain": "admin@..",
+		"double dot inside domain": "admin@co..com",
+		"slash in domain":          "admin@co/com",
+		"backslash in domain":      "admin@co\\com",
+		"slash in local":           "ad/min@co.com",
+		"double dot in local":      "ad..min@co.com",
+		"non-ascii in domain":      "admin@cö.com",
+		"whitespace inside local":  "ad min@co.com",
+		"null byte in domain":      "admin@co.com\x00evil",
 	}
 	for name, addr := range cases {
 		t.Run(name, func(t *testing.T) {
