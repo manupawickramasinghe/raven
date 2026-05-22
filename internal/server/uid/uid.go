@@ -584,6 +584,7 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 	// Important: As we delete messages, sequence numbers change for subsequent messages
 	// We need to account for this by tracking how many messages we've deleted
 	deletedCount := 0
+	var idsToDelete []any
 	for _, msg := range messagesToDelete {
 		// Get the original sequence number for this message
 		originalSeqNum := sequenceMap[msg.id]
@@ -595,13 +596,29 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 		// Send untagged EXPUNGE response with the adjusted sequence number
 		deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
 
-		// Delete the message from the mailbox
-		_, err = targetDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
-		if err != nil {
-			log.Printf("Failed to delete message %d (UID %d): %v", msg.id, msg.uid, err)
+		idsToDelete = append(idsToDelete, msg.id)
+		deletedCount++
+	}
+
+	// Batch delete the messages from the mailbox to avoid N+1 queries
+	batchSize := 500
+	for i := 0; i < len(idsToDelete); i += batchSize {
+		end := i + batchSize
+		if end > len(idsToDelete) {
+			end = len(idsToDelete)
 		}
 
-		deletedCount++
+		batch := idsToDelete[i:end]
+		placeholders := make([]string, len(batch))
+		for j := range batch {
+			placeholders[j] = "?"
+		}
+
+		query := fmt.Sprintf("DELETE FROM message_mailbox WHERE id IN (%s)", strings.Join(placeholders, ","))
+		_, err = targetDB.Exec(query, batch...)
+		if err != nil {
+			log.Printf("Failed to batch delete messages: %v", err)
+		}
 	}
 
 	// Update state tracking
