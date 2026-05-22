@@ -2,12 +2,15 @@ package groupresolver
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -495,7 +498,27 @@ func (gr *GroupResolver) getJSON(endpoint, assertion string, out any) error {
 // buildHTTPClient creates an HTTP client with TLS configuration
 func buildHTTPClient() *http.Client {
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true, // #nosec G402 -- Required for internal auth server communication
+		MinVersion: tls.VersionTLS12,
+	}
+
+	if caPath := os.Getenv("IDP_CA_CERT_PATH"); caPath != "" {
+		cleanPath := filepath.Clean(caPath)
+		caCert, err := os.ReadFile(cleanPath) // #nosec G304 G703 -- Intentionally configurable CA path from trusted environment variable
+
+		// Sanitize path for logging to prevent CRLF injection
+		safePath := strings.ReplaceAll(strings.ReplaceAll(cleanPath, "\n", ""), "\r", "")
+
+		if err != nil {
+			log.Printf("Warning: Could not read internal CA cert from %s: %v", safePath, err)
+		} else {
+			caCertPool := x509.NewCertPool()
+			if caCertPool.AppendCertsFromPEM(caCert) {
+				tlsConfig.RootCAs = caCertPool
+				log.Printf("Loaded internal CA cert from %s for group resolver", safePath)
+			} else {
+				log.Printf("Warning: Could not parse internal CA cert from %s", safePath)
+			}
+		}
 	}
 
 	return &http.Client{
