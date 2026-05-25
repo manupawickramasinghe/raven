@@ -392,13 +392,19 @@ func parseMultipart(body io.Reader, boundary string, depth int, parentPartIdx *i
 
 // storeAddresses stores email addresses in the database
 func storeAddresses(database *sql.DB, messageID int64, addressType string, addresses []mail.Address) error {
+	if len(addresses) == 0 {
+		return nil
+	}
+
+	dbAddresses := make([]db.EmailAddress, len(addresses))
 	for i, addr := range addresses {
-		err := db.AddAddress(database, messageID, addressType, addr.Name, addr.Address, i)
-		if err != nil {
-			return err
+		dbAddresses[i] = db.EmailAddress{
+			Name:  addr.Name,
+			Email: addr.Address,
 		}
 	}
-	return nil
+
+	return db.AddAddresses(database, messageID, addressType, dbAddresses)
 }
 
 // StoreMessagePerUserWithSharedDBAndS3 stores a message in a per-user database with optional S3 blob storage and shared blob deduplication
