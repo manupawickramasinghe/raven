@@ -1668,10 +1668,35 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 		// Send untagged EXPUNGE response with the adjusted sequence number
 		deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
 
-		// Delete the message from the mailbox
-		_, _ = userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
-
 		deletedCount++
+	}
+
+	// Bulk delete messages from the mailbox in chunks to respect SQLite limits
+	if len(messagesToDelete) > 0 {
+		chunkSize := 500
+		for i := 0; i < len(messagesToDelete); i += chunkSize {
+			end := i + chunkSize
+			if end > len(messagesToDelete) {
+				end = len(messagesToDelete)
+			}
+
+			chunk := messagesToDelete[i:end]
+
+			// Build the IN clause with placeholders
+			placeholders := make([]string, len(chunk))
+			ids := make([]interface{}, len(chunk))
+			for j, msg := range chunk {
+				placeholders[j] = "?"
+				ids[j] = msg.id
+			}
+
+			// #nosec G202 -- using string concatenation for IN clause placeholders, actual values are passed safely as args
+			query := "DELETE FROM message_mailbox WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+			_, err = userDB.Exec(query, ids...)
+			if err != nil {
+				log.Printf("Error bulk deleting messages during EXPUNGE: %v", err)
+			}
+		}
 	}
 
 	// Update state tracking
