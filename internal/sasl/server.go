@@ -40,19 +40,20 @@ type authState struct {
 
 // Server represents a SASL authentication server
 type Server struct {
-	socketPath     string
-	tcpAddr        string
-	authURL        string
-	domain         string
-	saslScope      conf.SASLScope
-	oauthConfig    *conf.Config
-	oauthValidator *oauthbearer.Validator
-	unixListener   net.Listener
-	tcpListener    net.Listener
-	mu             sync.Mutex
-	wg             sync.WaitGroup
-	shutdown       chan struct{}
-	shutdownOnce   sync.Once
+	socketPath                 string
+	tcpAddr                    string
+	authURL                    string
+	domain                     string
+	saslScope                  conf.SASLScope
+	oauthConfig                *conf.Config
+	oauthValidator             *oauthbearer.Validator
+	oauthClientEmailAuthorizer *clientEmailAuthorizer
+	unixListener               net.Listener
+	tcpListener                net.Listener
+	mu                         sync.Mutex
+	wg                         sync.WaitGroup
+	shutdown                   chan struct{}
+	shutdownOnce               sync.Once
 }
 
 // NewServer creates a new SASL authentication server
@@ -91,6 +92,18 @@ func (s *Server) initOAuthValidation() {
 
 	s.oauthConfig = cfg
 	s.oauthValidator = validator
+
+	if strings.TrimSpace(cfg.OAuthClientEmailAuthorizationFile) != "" {
+		authorizer, loadErr := newClientEmailAuthorizerFromFile(cfg.OAuthClientEmailAuthorizationFile)
+		if loadErr != nil {
+			log.Printf("SASL OAUTHBEARER: client email authorization config load failed: %v", loadErr)
+		} else {
+			s.oauthClientEmailAuthorizer = authorizer
+			log.Printf("SASL OAUTHBEARER: client email authorization enabled file=%q", cfg.OAuthClientEmailAuthorizationFile)
+		}
+	} else {
+		log.Printf("SASL OAUTHBEARER: client email authorization file not configured (client_credentials sender checks disabled)")
+	}
 }
 
 // Start starts the SASL server
@@ -515,13 +528,14 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 		return
 	}
 
-	accessToken, _, saslUser, err := oauthbearer.ParseInitialClientResponseDetails(resp)
+	accessToken, authzid, requestedUser, err := oauthbearer.ParseInitialClientResponseDetails(resp)
 	if err != nil {
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid OAUTHBEARER payload\n", id)
 		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
 	}
+	log.Printf("SASL OAUTHBEARER: parsed auth request id=%s authzid=%q requested_user=%q token_len=%d", id, authzid, requestedUser, len(accessToken))
 
 	if s.oauthConfig == nil || s.oauthValidator == nil {
 		response := fmt.Sprintf("FAIL\t%s\treason=OAUTHBEARER configuration error\n", id)
@@ -532,6 +546,16 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 
 	claims, err := s.oauthValidator.ValidateAccessToken(accessToken)
 	if err != nil {
+		log.Printf("SASL OAUTHBEARER: token validation failed id=%s error=%v", id, err)
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+	log.Printf("SASL OAUTHBEARER: token validated id=%s grant_type=%q client_id=%q identity=%q", id, claims.GrantType, claims.ClientID, claims.Identity())
+
+	if err := s.authorizeOAuthClientCredentialsSender(&claims, authzid, requestedUser); err != nil {
+		log.Printf("SASL OAUTHBEARER: sender authorization failed id=%s error=%v", id, err)
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials\n", id)
 		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
@@ -547,7 +571,7 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 		return
 	}
 
-	saslUserEmail := normalizeOAuthIdentity(saslUser, s.oauthConfig.Domain)
+	saslUserEmail := normalizeOAuthIdentity(requestedUser, s.oauthConfig.Domain)
 	if saslUserEmail != "" && !strings.EqualFold(saslUserEmail, user) {
 		roleAccess := oauthbearer.EvaluateRoleAccess(saslUserEmail, claims)
 		if roleAccess == nil {
@@ -564,6 +588,59 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 	response := fmt.Sprintf("OK\t%s\tuser=%s\n", id, user)
 	_, _ = conn.Write([]byte(response))
 	log.Printf("SASL sent: %s", strings.TrimSpace(response))
+}
+
+func (s *Server) authorizeOAuthClientCredentialsSender(claims *oauthbearer.Claims, authzid, requestedUser string) error {
+	if !strings.EqualFold(strings.TrimSpace(claims.GrantType), "client_credentials") {
+		log.Printf("SASL OAUTHBEARER: skipping sender authorization grant_type=%q", claims.GrantType)
+		return nil
+	}
+
+	clientID := strings.TrimSpace(claims.ClientID)
+	if clientID == "" {
+		log.Printf("SASL OAUTHBEARER: client_credentials authorization denied reason=missing_client_id")
+		return fmt.Errorf("missing client_id claim")
+	}
+
+	defaultDomain := s.domain
+	if s.oauthConfig != nil {
+		defaultDomain = s.oauthConfig.Domain
+	}
+
+	senderEmail := normalizeOAuthIdentity(firstNonEmpty(requestedUser, authzid), defaultDomain)
+	log.Printf("SASL OAUTHBEARER: client_credentials authorization input client_id=%q requested_user=%q authzid=%q normalized_sender=%q", clientID, strings.TrimSpace(requestedUser), strings.TrimSpace(authzid), senderEmail)
+	if senderEmail == "" {
+		log.Printf("SASL OAUTHBEARER: client_credentials authorization denied client_id=%q reason=missing_sender_email", clientID)
+		return fmt.Errorf("missing sender email")
+	}
+
+	if s.oauthClientEmailAuthorizer == nil {
+		log.Printf("SASL OAUTHBEARER: client_credentials authorization denied client_id=%q sender=%q reason=missing_authorization_config", clientID, senderEmail)
+		return fmt.Errorf("missing client email authorization config")
+	}
+
+	if !s.oauthClientEmailAuthorizer.IsEmailAuthorized(clientID, senderEmail) {
+		log.Printf("SASL OAUTHBEARER: client_credentials authorization denied client_id=%q sender=%q reason=email_not_allowed", clientID, senderEmail)
+		return fmt.Errorf("sender email is not authorized for client_id")
+	}
+
+	log.Printf("SASL OAUTHBEARER: client_credentials authorization granted client_id=%q sender=%q", clientID, senderEmail)
+
+	// Override the token identity with the authorized sender so that the
+	// downstream user resolved via claims.Identity() is the sender email
+	// rather than the client_id.
+	claims.Email = senderEmail
+
+	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func normalizeOAuthIdentity(identity, defaultDomain string) string {

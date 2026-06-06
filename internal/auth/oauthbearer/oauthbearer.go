@@ -40,6 +40,8 @@ type Claims struct {
 	Audience           []string
 	Roles              []string
 	ExpiresAt          time.Time
+	GrantType          string
+	ClientID           string
 }
 
 // RoleAccessRequest describes a role-based mailbox access derived from a
@@ -309,6 +311,25 @@ func extractClaims(claims jwt.MapClaims) Claims {
 	}
 	if expUnix, ok := claimAsInt64(claims, "exp"); ok {
 		result.ExpiresAt = time.Unix(expUnix, 0)
+	}
+	if result.GrantType == "" {
+		result.GrantType = claimAsString(claims, "grant_type")
+	}
+	if result.GrantType == "" {
+		result.GrantType = claimAsString(claims, "grantTypes")
+	}
+	if result.GrantType == "" {
+		result.GrantType = claimAsString(claims, "gty")
+	}
+	if result.ClientID == "" {
+		result.ClientID = claimAsString(claims, "client_id")
+	}
+	if result.ClientID == "" {
+		result.ClientID = claimAsString(claims, "clientId")
+	}
+
+	if strings.EqualFold(result.GrantType, "client_credentials") {
+		log.Printf("OAUTHBEARER: extracted client_credentials claims grant_type=%q client_id=%q", result.GrantType, result.ClientID)
 	}
 	return result
 }
