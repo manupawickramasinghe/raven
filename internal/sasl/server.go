@@ -18,6 +18,8 @@ import (
 	"time"
 )
 
+var logSanitizer = strings.NewReplacer("\n", "\\n", "\r", "\\r")
+
 // ConnectionType represents the type of connection
 type ConnectionType int
 
@@ -279,7 +281,7 @@ func (s *Server) handleConnection(conn net.Conn, connType ConnectionType) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Sanitize line for logging to prevent log injection
-		sanitizedLine := strings.ReplaceAll(strings.ReplaceAll(line, "\n", "\\n"), "\r", "\\r")
+		sanitizedLine := logSanitizer.Replace(line)
 		// #nosec G706 -- Input is sanitized above to prevent log injection
 		log.Printf("SASL received: %s", sanitizedLine)
 
@@ -334,7 +336,7 @@ func (s *Server) handleConnection(conn net.Conn, connType ConnectionType) {
 
 		default:
 			// Sanitize command for logging to prevent log injection
-			sanitizedCmd := strings.ReplaceAll(strings.ReplaceAll(command, "\n", "\\n"), "\r", "\\r")
+			sanitizedCmd := logSanitizer.Replace(command)
 			// #nosec G706 -- Input is sanitized above to prevent log injection
 			log.Printf("Unknown SASL command: %s", sanitizedCmd)
 		}

@@ -16,6 +16,8 @@ import (
 )
 
 // Session represents an LMTP session
+var logSanitizer = strings.NewReplacer("\n", "\\n", "\r", "\\r")
+
 type Session struct {
 	conn          net.Conn
 	reader        *bufio.Reader
@@ -80,7 +82,7 @@ func (s *Session) Handle() error {
 		}
 
 		// Sanitize line for logging to prevent log injection
-		sanitizedLine := strings.ReplaceAll(strings.ReplaceAll(line, "\n", "\\n"), "\r", "\\r")
+		sanitizedLine := logSanitizer.Replace(line)
 		// #nosec G706 -- Input is sanitized above to prevent log injection
 		log.Printf("C: %s", sanitizedLine)
 

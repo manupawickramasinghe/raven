@@ -1474,3 +1474,21 @@ func TestDoSProtection(t *testing.T) {
 		t.Errorf("Expected DoS FAIL response with initial response, got: %q", response2)
 	}
 }
+
+func BenchmarkLogSanitization_ReplaceAll(b *testing.B) {
+	input := "AUTH\t1\tPLAIN\r\n"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = strings.ReplaceAll(strings.ReplaceAll(input, "\n", "\\n"), "\r", "\\r")
+	}
+}
+
+var benchLogSanitizer = strings.NewReplacer("\n", "\\n", "\r", "\\r")
+
+func BenchmarkLogSanitization_NewReplacer(b *testing.B) {
+	input := "AUTH\t1\tPLAIN\r\n"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = benchLogSanitizer.Replace(input)
+	}
+}
