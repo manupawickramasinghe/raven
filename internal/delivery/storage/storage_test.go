@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/delivery/parser"
 )
@@ -806,5 +807,33 @@ func TestSpamFiltering_GreylistGoesToInbox(t *testing.T) {
 	spamCount, _ := stor.GetMessageCountInFolder("greyuser@example.com", "Spam")
 	if spamCount != 0 {
 		t.Errorf("expected 0 messages in Spam folder for greylist, got %d", spamCount)
+	}
+}
+
+func TestNewStorageWithS3(t *testing.T) {
+	mgr := setupTestDBManager(t)
+
+	// Create a dummy S3 blob storage instance
+	// Just passing a non-nil pointer is enough to test the constructor
+	s3Config := blobstorage.Config{
+		Enabled: false, // Don't actually connect to AWS
+	}
+	s3Storage, err := blobstorage.NewS3BlobStorage(s3Config)
+	if err != nil {
+		t.Fatalf("Failed to create mock S3 storage: %v", err)
+	}
+
+	stor := NewStorageWithS3(mgr, s3Storage)
+
+	if stor == nil {
+		t.Fatalf("NewStorageWithS3 returned nil")
+	}
+
+	if stor.dbManager != mgr {
+		t.Errorf("expected dbManager to be %v, got %v", mgr, stor.dbManager)
+	}
+
+	if stor.s3Storage != s3Storage {
+		t.Errorf("expected s3Storage to be %v, got %v", s3Storage, stor.s3Storage)
 	}
 }
