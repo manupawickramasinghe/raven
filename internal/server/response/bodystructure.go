@@ -47,6 +47,9 @@ func BuildBodyStructure(rawMsg string) string {
 			return buildMultipartBodyStructure(rawMsg, mainType, subType, boundary)
 		} else {
 			fmt.Printf("DEBUG BuildBodyStructure: WARNING - multipart but no boundary found!\n")
+			// RFC 3501: MULTIPART must not be an atomic type. Fallback to TEXT/PLAIN
+			mainType = "TEXT"
+			subType = "PLAIN"
 		}
 	} else {
 		fmt.Printf("DEBUG BuildBodyStructure: Not multipart, building single-part structure\n")
@@ -206,16 +209,16 @@ func buildPartStructure(partMsg string) string {
 		subType = strings.ToUpper(typeParts[1])
 	}
 
-	// CRITICAL FIX: Handle nested multipart parts
-	// If this part is itself a multipart, recursively parse it
 	if mainType == "MULTIPART" {
 		boundary := params["boundary"]
 		if boundary != "" {
 			fmt.Printf("DEBUG buildPartStructure: Found nested multipart/%s with boundary='%s'\n", subType, boundary)
-			// Return just the multipart structure without the "BODYSTRUCTURE" prefix
 			fullStruct := buildMultipartBodyStructure(partMsg, mainType, subType, boundary)
-			// Strip the "BODYSTRUCTURE " prefix to get just the structure
 			return strings.TrimPrefix(fullStruct, "BODYSTRUCTURE ")
+		} else {
+			// RFC 3501: MULTIPART must not be an atomic type. Fallback to TEXT/PLAIN
+			mainType = "TEXT"
+			subType = "PLAIN"
 		}
 	}
 
@@ -314,6 +317,10 @@ func buildParamList(params map[string]string) string {
 // buildFallbackBodyStructure builds a simple fallback BODYSTRUCTURE
 // Used when message parsing fails
 func buildFallbackBodyStructure(mainType, subType string) string {
+	if mainType == "MULTIPART" {
+		mainType = "TEXT"
+		subType = "PLAIN"
+	}
 	return fmt.Sprintf("BODYSTRUCTURE (%s %s NIL NIL NIL \"7BIT\" 0)",
 		QuoteOrNIL(mainType), QuoteOrNIL(subType))
 }

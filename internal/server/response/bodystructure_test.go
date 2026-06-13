@@ -36,12 +36,13 @@ func TestBuildBodyStructure_MultipartMixed(t *testing.T) {
 }
 
 func TestBuildBodyStructure_FallbackMultipart_NoBoundary(t *testing.T) {
-	// Missing boundary parameter should treat as generic multipart with no parts parsed -> fallback structure
+	// Missing boundary parameter should treat as generic multipart with no parts parsed
+	// RFC 3501 says MULTIPART must not be an atomic part, so we degrade to TEXT/PLAIN
 	headers := "Content-Type: multipart/mixed"
 	msg := headers + "\r\n\r\nIgnored"
 	bs := BuildBodyStructure(msg)
-	if !containsAll(bs, []string{"MULTIPART", "MIXED"}) {
-		t.Errorf("expected fallback multipart structure: %s", bs)
+	if !containsAll(bs, []string{"TEXT", "PLAIN"}) {
+		t.Errorf("expected fallback structure (TEXT/PLAIN): %s", bs)
 	}
 }
 
