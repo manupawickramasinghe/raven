@@ -646,8 +646,14 @@ func extractBaseURL(rawURL string) (string, error) {
 }
 
 func fetchSystemAssertion(baseURL string) string {
-	username := getEnvOrDefault("IDP_SYSTEM_USERNAME", "admin")
-	password := getEnvOrDefault("IDP_SYSTEM_PASSWORD", "admin")
+	username := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
+	password := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
+
+	if username == "" || password == "" {
+		log.Printf("LOGIN: IDP system credentials not configured, skipping system assertion fetch")
+		return ""
+	}
+
 	log.Printf("LOGIN: requesting system assertion for OU resolution using configured system identity")
 
 	assertion := fetchAssertion(baseURL, username, password)
@@ -842,13 +848,6 @@ func buildAuthHTTPClient() *http.Client {
 	}
 }
 
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-
-	return defaultValue
-}
 
 // ===== HANDLE SSL CONNECTION =====
 
