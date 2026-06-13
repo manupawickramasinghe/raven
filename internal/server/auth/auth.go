@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -462,12 +463,8 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	// TLS config for system CA bundle (default)
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true, // #nosec G402 -- Required for internal auth server communication
-	}
-	transport := &http.Transport{TLSClientConfig: tlsConfig}
-	client := &http.Client{Transport: transport}
+	// Use the central auth HTTP client with secure CA configuration
+	client := buildAuthHTTPClient()
 
 	// #nosec G704 -- URL is from validated config, not user input
 	resp, err := client.Do(req)
@@ -832,8 +829,23 @@ func getJSON(endpoint, assertion string, out any) error {
 }
 
 func buildAuthHTTPClient() *http.Client {
+	certPool, err := x509.SystemCertPool()
+	if err != nil {
+		certPool = x509.NewCertPool()
+	}
+
+	caPath := getEnvOrDefault("INTERNAL_CA_CERT_PATH", "/certs/ca.pem")
+	if caCert, err := os.ReadFile(caPath); err == nil {
+		certPool.AppendCertsFromPEM(caCert)
+	}
+
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true, // #nosec G402 -- Required for internal auth server communication
+		RootCAs: certPool,
+	}
+
+	// For testing environments, allow bypassing verification if explicitly requested via INSECURE path
+	if getEnvOrDefault("INTERNAL_CA_CERT_PATH", "") == "INSECURE" || os.Getenv("RAVEN_TEST_INSECURE_SKIP_VERIFY") == "1" {
+		tlsConfig.InsecureSkipVerify = true
 	}
 
 	return &http.Client{

@@ -779,6 +779,9 @@ func SetupMockAuthServerWithResponse(t *testing.T, statusCode int, response stri
 	// Create TLS server for more realistic testing
 	mock.Server = httptest.NewTLSServer(handler)
 
+	// In test environments we want to use the INSECURE flag for INTERNAL_CA_CERT_PATH.
+	os.Setenv("INTERNAL_CA_CERT_PATH", "INSECURE")
+
 	t.Logf("Mock auth server started at: %s", mock.URL)
 	return mock
 }
