@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 )
@@ -76,6 +77,43 @@ func TestNewServer(t *testing.T) {
 
 	if server.storage == nil {
 		t.Error("Expected non-nil storage")
+	}
+
+	if server.shutdown == nil {
+		t.Error("Expected non-nil shutdown channel")
+	}
+}
+
+func TestNewServerWithS3(t *testing.T) {
+	dbManager := setupTestDBManager(t)
+	cfg := setupTestConfig(t)
+
+	s3Storage, err := blobstorage.NewS3BlobStorage(blobstorage.Config{Enabled: false})
+	if err != nil {
+		t.Fatalf("Failed to create mock S3 storage: %v", err)
+	}
+
+	server := NewServerWithS3(dbManager, cfg, s3Storage)
+
+	if server == nil {
+		t.Fatal("Expected non-nil server")
+		return
+	}
+
+	if server.dbManager == nil {
+		t.Error("Expected non-nil dbManager")
+	}
+
+	if server.config == nil {
+		t.Error("Expected non-nil config")
+	}
+
+	if server.storage == nil {
+		t.Error("Expected non-nil storage")
+	}
+
+	if server.s3Storage == nil {
+		t.Error("Expected non-nil s3Storage")
 	}
 
 	if server.shutdown == nil {
