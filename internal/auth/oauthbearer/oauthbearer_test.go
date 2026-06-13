@@ -51,10 +51,90 @@ func TestParseInitialClientResponseDetails(t *testing.T) {
 	}
 }
 
-func TestParseRawInitialClientResponse_MissingBearer(t *testing.T) {
-	_, _, _, err := ParseRawInitialClientResponseDetails("n,,\x01k=v\x01\x01")
-	if err == nil {
-		t.Fatal("expected missing bearer error, got nil")
+func TestParseRawInitialClientResponseDetails(t *testing.T) {
+	tests := []struct {
+		name        string
+		raw         string
+		wantToken   string
+		wantAuthzid string
+		wantUser    string
+		wantErr     bool
+	}{
+		{
+			name:        "happy path",
+			raw:         "n,a=user@example.com,\x01user=alice\x01auth=Bearer token-abc\x01\x01",
+			wantToken:   "token-abc",
+			wantAuthzid: "user@example.com",
+			wantUser:    "alice",
+			wantErr:     false,
+		},
+		{
+			name:        "happy path - case insensitive prefixes",
+			raw:         "n,a=user@example.com,\x01USER=alice\x01AUTH=BEARER token-abc\x01\x01",
+			wantToken:   "token-abc",
+			wantAuthzid: "user@example.com",
+			wantUser:    "alice",
+			wantErr:     false,
+		},
+		{
+			name:        "happy path - no authzid",
+			raw:         "n,,\x01user=alice\x01auth=Bearer token-abc\x01\x01",
+			wantToken:   "token-abc",
+			wantAuthzid: "",
+			wantUser:    "alice",
+			wantErr:     false,
+		},
+		{
+			name:        "happy path - no user",
+			raw:         "n,a=user@example.com,\x01auth=Bearer token-abc\x01\x01",
+			wantToken:   "token-abc",
+			wantAuthzid: "user@example.com",
+			wantUser:    "",
+			wantErr:     false,
+		},
+		{
+			name:        "missing bearer",
+			raw:         "n,,\x01k=v\x01\x01",
+			wantToken:   "",
+			wantAuthzid: "",
+			wantUser:    "",
+			wantErr:     true,
+		},
+		{
+			name:        "empty bearer token",
+			raw:         "n,,\x01user=alice\x01auth=Bearer \x01\x01",
+			wantToken:   "",
+			wantAuthzid: "",
+			wantUser:    "alice",
+			wantErr:     true,
+		},
+		{
+			name:        "empty payload",
+			raw:         "",
+			wantToken:   "",
+			wantAuthzid: "",
+			wantUser:    "",
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotToken, gotAuthzid, gotUser, err := ParseRawInitialClientResponseDetails(tt.raw)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseRawInitialClientResponseDetails() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if gotToken != tt.wantToken {
+				t.Errorf("ParseRawInitialClientResponseDetails() gotToken = %v, want %v", gotToken, tt.wantToken)
+			}
+			if gotAuthzid != tt.wantAuthzid {
+				t.Errorf("ParseRawInitialClientResponseDetails() gotAuthzid = %v, want %v", gotAuthzid, tt.wantAuthzid)
+			}
+			if gotUser != tt.wantUser {
+				t.Errorf("ParseRawInitialClientResponseDetails() gotUser = %v, want %v", gotUser, tt.wantUser)
+			}
+		})
 	}
 }
 
