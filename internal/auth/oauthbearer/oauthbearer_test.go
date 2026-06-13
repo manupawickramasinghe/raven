@@ -465,3 +465,88 @@ func intToBytes(v int) []byte {
 	}
 	return buf
 }
+
+func TestNewValidator(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          Config
+		wantErr      bool
+		expectedSkew time.Duration
+	}{
+		{
+			name: "missing JWKSURL",
+			cfg: Config{
+				JWKSURL: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "spaces in JWKSURL",
+			cfg: Config{
+				JWKSURL: "   ",
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid JWKSURL, default clock skew",
+			cfg: Config{
+				JWKSURL: "http://example.com/.well-known/jwks.json",
+			},
+			wantErr:      false,
+			expectedSkew: defaultClockSkew,
+		},
+		{
+			name: "valid JWKSURL, negative clock skew gets default",
+			cfg: Config{
+				JWKSURL:   "http://example.com/.well-known/jwks.json",
+				ClockSkew: -10 * time.Second,
+			},
+			wantErr:      false,
+			expectedSkew: defaultClockSkew,
+		},
+		{
+			name: "valid JWKSURL, positive clock skew is preserved",
+			cfg: Config{
+				JWKSURL:   "http://example.com/.well-known/jwks.json",
+				ClockSkew: 30 * time.Second,
+			},
+			wantErr:      false,
+			expectedSkew: 30 * time.Second,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v, err := NewValidator(tc.cfg)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if v != nil {
+					t.Fatalf("expected nil validator, got %v", v)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if v == nil {
+				t.Fatalf("expected non-nil validator")
+			}
+
+			if v.cfg.ClockSkew != tc.expectedSkew {
+				t.Errorf("expected clock skew %v, got %v", tc.expectedSkew, v.cfg.ClockSkew)
+			}
+			if v.cfg.JWKSURL != tc.cfg.JWKSURL {
+				t.Errorf("expected JWKSURL %q, got %q", tc.cfg.JWKSURL, v.cfg.JWKSURL)
+			}
+			if v.httpClient == nil {
+				t.Errorf("expected httpClient to be initialized")
+			}
+			if v.keys == nil {
+				t.Errorf("expected keys map to be initialized")
+			}
+		})
+	}
+}
