@@ -828,7 +828,16 @@ func getJSON(endpoint, assertion string, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+var AuthTestTransport http.RoundTripper
+
 func buildAuthHTTPClient() *http.Client {
+	if AuthTestTransport != nil {
+		return &http.Client{
+			Transport: AuthTestTransport,
+			Timeout:   10 * time.Second,
+		}
+	}
+
 	certPool, err := x509.SystemCertPool()
 	if err != nil {
 		certPool = x509.NewCertPool()
@@ -843,10 +852,9 @@ func buildAuthHTTPClient() *http.Client {
 		RootCAs: certPool,
 	}
 
-	// For testing environments, allow bypassing verification if explicitly requested via INSECURE path
-	if getEnvOrDefault("INTERNAL_CA_CERT_PATH", "") == "INSECURE" || os.Getenv("RAVEN_TEST_INSECURE_SKIP_VERIFY") == "1" {
-		tlsConfig.InsecureSkipVerify = true
-	}
+	// InsecureSkipVerify is intentionally omitted here to satisfy static analysis (CodeQL/gosec).
+	// If tests require bypassing certificate verification, they must configure their environment
+	// to use an injected round tripper or proper CA injection, instead of toggling this flag.
 
 	return &http.Client{
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
