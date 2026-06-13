@@ -157,6 +157,67 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name: "Invalid max recipients",
+			modify: func(c *config.Config) {
+				c.LMTP.MaxRecipients = 0
+			},
+			expectErr: true,
+		},
+		{
+			name: "Empty default folder",
+			modify: func(c *config.Config) {
+				c.Delivery.DefaultFolder = ""
+			},
+			expectErr: true,
+		},
+		{
+			name: "Invalid socketmap network",
+			modify: func(c *config.Config) {
+				c.Socketmap.Enabled = true
+				c.Socketmap.Network = "udp"
+				c.Socketmap.Address = "127.0.0.1:1234"
+				c.Socketmap.TimeoutSeconds = 2
+			},
+			expectErr: true,
+		},
+		{
+			name: "Empty socketmap address",
+			modify: func(c *config.Config) {
+				c.Socketmap.Enabled = true
+				c.Socketmap.Network = "tcp"
+				c.Socketmap.Address = ""
+				c.Socketmap.TimeoutSeconds = 2
+			},
+			expectErr: true,
+		},
+		{
+			name: "Invalid socketmap timeout",
+			modify: func(c *config.Config) {
+				c.Socketmap.Enabled = true
+				c.Socketmap.Network = "tcp"
+				c.Socketmap.Address = "127.0.0.1:1234"
+				c.Socketmap.TimeoutSeconds = 0
+			},
+			expectErr: true,
+		},
+		{
+			name: "Valid socketmap",
+			modify: func(c *config.Config) {
+				c.Socketmap.Enabled = true
+				c.Socketmap.Network = "tcp"
+				c.Socketmap.Address = "127.0.0.1:1234"
+				c.Socketmap.TimeoutSeconds = 2
+			},
+			expectErr: false,
+		},
+		{
+			name: "Invalid log format",
+			modify: func(c *config.Config) {
+				c.Logging.Format = "xml"
+			},
+			expectErr: true,
+		},
 	}
 
 	for _, tt := range tests {
