@@ -3,6 +3,7 @@ package message_test
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"raven/internal/models"
@@ -306,49 +307,51 @@ func TestCheckCommand_TagHandling(t *testing.T) {
 
 // TestCheckCommand_ConcurrentAccess tests concurrent CHECK requests
 func TestCheckCommand_ConcurrentAccess(t *testing.T) {
-	t.Skip("TODO: This test hangs due to calling t.Fatalf() inside goroutines. Needs refactoring to use t.Errorf() and proper error handling.")
 	srv := server.SetupTestServerSimple(t)
 
 	const numRequests = 20
-	done := make(chan bool, numRequests)
 	errCh := make(chan error, numRequests)
+
+	// Setup state outside of goroutines to avoid calling t.Fatalf from within
+	baseState := server.SetupAuthenticatedState(t, srv, "user")
+	database := server.GetDatabaseFromServer(srv)
+	mailboxID, err := server.GetMailboxID(t, database, baseState.UserID, "INBOX")
+	if err != nil {
+		t.Fatalf("failed to get INBOX mailbox: %v", err)
+	}
+	baseState.SelectedMailboxID = mailboxID
+	baseState.SelectedFolder = "INBOX"
+
+	var wg sync.WaitGroup
+	wg.Add(numRequests)
 
 	// Launch concurrent CHECK requests
 	for i := 0; i < numRequests; i++ {
 		go func(index int) {
+			defer wg.Done()
 			conn := server.NewMockConn()
-			state := server.SetupAuthenticatedState(t, srv, "user")
-			database := server.GetDatabaseFromServer(srv)
-			mailboxID, err := server.GetMailboxID(t, database, state.UserID, "INBOX")
-			if err != nil {
-				errCh <- fmt.Errorf("failed to get INBOX mailbox: %v", err)
-				done <- true
-				return
-			}
-			state.SelectedMailboxID = mailboxID
-			state.SelectedFolder = "INBOX"
 
-			srv.HandleCheck(conn, "CONCURRENT", state)
+			// Create a copy of the state for this connection to avoid data races
+			// on state fields like LastMessageCount
+			stateCopy := *baseState
+			stateCopy.Conn = conn
+
+			srv.HandleCheck(conn, "CONCURRENT", &stateCopy)
 
 			response := conn.GetWrittenData()
 			if !strings.Contains(response, "CONCURRENT OK CHECK completed") {
 				errCh <- fmt.Errorf("request %d failed: %s", index, response)
-			} else {
-				errCh <- nil
 			}
-			done <- true
 		}(i)
 	}
 
 	// Wait for all requests to complete
-	for i := 0; i < numRequests; i++ {
-		<-done
-	}
-
+	wg.Wait()
 	close(errCh)
+
 	for err := range errCh {
 		if err != nil {
-			t.Fatalf("Concurrent CHECK test failure: %v", err)
+			t.Errorf("Concurrent CHECK test failure: %v", err)
 		}
 	}
 }
