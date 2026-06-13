@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/delivery/parser"
 )
@@ -806,5 +807,44 @@ func TestSpamFiltering_GreylistGoesToInbox(t *testing.T) {
 	spamCount, _ := stor.GetMessageCountInFolder("greyuser@example.com", "Spam")
 	if spamCount != 0 {
 		t.Errorf("expected 0 messages in Spam folder for greylist, got %d", spamCount)
+	}
+}
+
+func TestNewStorage(t *testing.T) {
+	mgr := setupTestDBManager(t)
+	stor := NewStorage(mgr)
+
+	if stor == nil {
+		t.Fatalf("expected NewStorage to return a non-nil Storage")
+	}
+	if stor.dbManager != mgr {
+		t.Errorf("expected dbManager to be set correctly")
+	}
+	if stor.s3Storage != nil {
+		t.Errorf("expected s3Storage to be nil")
+	}
+}
+
+func TestNewStorageWithS3(t *testing.T) {
+	mgr := setupTestDBManager(t)
+	// Create a dummy blobstorage for the test
+	s3Config := blobstorage.Config{
+		Enabled: false,
+	}
+	s3Storage, err := blobstorage.NewS3BlobStorage(s3Config)
+	if err != nil {
+		t.Fatalf("failed to create dummy s3 storage: %v", err)
+	}
+
+	stor := NewStorageWithS3(mgr, s3Storage)
+
+	if stor == nil {
+		t.Fatalf("expected NewStorageWithS3 to return a non-nil Storage")
+	}
+	if stor.dbManager != mgr {
+		t.Errorf("expected dbManager to be set correctly")
+	}
+	if stor.s3Storage != s3Storage {
+		t.Errorf("expected s3Storage to be set correctly")
 	}
 }
