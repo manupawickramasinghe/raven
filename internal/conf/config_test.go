@@ -378,6 +378,57 @@ Auth_Server_URL: https://auth.uppercase.example.com
 	}
 }
 
+func TestConfig_SetDefaults(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    Config
+		expected Config
+	}{
+		{
+			name: "Empty SASLScope defaults to SASLScopeAll",
+			input: Config{
+				Domain:        "example.com",
+				AuthServerURL: "https://auth.example.com",
+			},
+			expected: Config{
+				Domain:        "example.com",
+				AuthServerURL: "https://auth.example.com",
+				SASLScope:     SASLScopeAll,
+			},
+		},
+		{
+			name: "Existing SASLScope is preserved",
+			input: Config{
+				Domain:        "example.com",
+				AuthServerURL: "https://auth.example.com",
+				SASLScope:     SASLScopeTCPOnly,
+			},
+			expected: Config{
+				Domain:        "example.com",
+				AuthServerURL: "https://auth.example.com",
+				SASLScope:     SASLScopeTCPOnly,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.input
+			cfg.SetDefaults()
+
+			if cfg.SASLScope != tt.expected.SASLScope {
+				t.Errorf("Expected SASLScope %v, got %v", tt.expected.SASLScope, cfg.SASLScope)
+			}
+			if cfg.Domain != tt.expected.Domain {
+				t.Errorf("Expected Domain %v, got %v", tt.expected.Domain, cfg.Domain)
+			}
+			if cfg.AuthServerURL != tt.expected.AuthServerURL {
+				t.Errorf("Expected AuthServerURL %v, got %v", tt.expected.AuthServerURL, cfg.AuthServerURL)
+			}
+		})
+	}
+}
+
 // TestSASLScopeValidation tests SASL scope validation
 func TestSASLScopeValidation(t *testing.T) {
 	tmpDir := t.TempDir()
