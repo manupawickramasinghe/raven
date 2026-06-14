@@ -1181,8 +1181,14 @@ func ReadDataCommand(r *bufio.Reader, maxSize int64) ([]byte, error) {
 // multi-line continuations. Only lines starting with space/tab extend the previous header,
 // preventing malformed headers from corrupting adjacent fields.
 func extractAllHeaders(rawMessage string) []MessageHeader {
+	rawHeaderMessage := rawMessage
+	if headerEnd := strings.Index(rawMessage, "\r\n\r\n"); headerEnd >= 0 {
+		rawHeaderMessage = rawMessage[:headerEnd]
+	} else if headerEnd := strings.Index(rawMessage, "\n\n"); headerEnd >= 0 {
+		rawHeaderMessage = rawMessage[:headerEnd]
+	}
 	var headers []MessageHeader
-	lines := strings.Split(rawMessage, "\n")
+	lines := strings.Split(rawHeaderMessage, "\n")
 	sequence := 0
 	var currentHeaderName string
 	var currentHeaderValue strings.Builder
@@ -1192,14 +1198,6 @@ func extractAllHeaders(rawMessage string) []MessageHeader {
 
 		// Empty line marks end of headers section
 		if line == "" {
-			// Save last header if exists
-			if currentHeaderName != "" {
-				headers = append(headers, MessageHeader{
-					Name:     currentHeaderName,
-					Value:    currentHeaderValue.String(),
-					Sequence: sequence,
-				})
-			}
 			break
 		}
 
@@ -1235,6 +1233,14 @@ func extractAllHeaders(rawMessage string) []MessageHeader {
 		// Parse new header field
 		currentHeaderName = strings.TrimSpace(line[:colonIdx])
 		currentHeaderValue.WriteString(strings.TrimSpace(line[colonIdx+1:]))
+	}
+
+	if currentHeaderName != "" {
+		headers = append(headers, MessageHeader{
+			Name:     currentHeaderName,
+			Value:    currentHeaderValue.String(),
+			Sequence: sequence,
+		})
 	}
 
 	return headers
