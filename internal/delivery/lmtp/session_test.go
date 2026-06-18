@@ -1163,6 +1163,9 @@ func TestGroupEmailDelivery(t *testing.T) {
 	cfg.Delivery.RejectUnknownUser = false
 	cfg.Delivery.QuotaEnabled = false
 
+	t.Setenv("IDP_SYSTEM_USERNAME", "admin")
+	t.Setenv("IDP_SYSTEM_PASSWORD", "admin")
+
 	conn := newMockConn()
 	resolver := groupresolver.NewGroupResolver(idpServer.URL, "app-123", "admin", "admin")
 	session := NewSession(conn, stor, cfg, resolver)

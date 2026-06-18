@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -87,11 +89,21 @@ func Authenticate(host, port string, tokenRefreshSeconds int) (*Auth, error) {
 
 	// Step 3: Complete authentication flow
 	log.Printf("  │ Completing authentication...")
+
+	systemUsername := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
+	systemPassword := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
+
+	if systemUsername == "" || systemPassword == "" {
+		log.Printf("  │ ✗ IDP_SYSTEM_USERNAME or IDP_SYSTEM_PASSWORD not configured")
+		log.Printf("  └───────────────────────────────────")
+		return nil, fmt.Errorf("IDP_SYSTEM_USERNAME or IDP_SYSTEM_PASSWORD not configured")
+	}
+
 	authPayload := map[string]interface{}{
 		"flowId": flowResp.FlowID,
 		"inputs": map[string]string{
-			"username":              "admin",
-			"password":              "admin",
+			"username":              systemUsername,
+			"password":              systemPassword,
 			"requested_permissions": "system",
 		},
 		"action": "action_001",
