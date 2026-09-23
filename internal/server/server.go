@@ -91,7 +91,7 @@ func (s *IMAPServer) greetingCapabilities(isTLS bool) string {
 		capabilities = append(capabilities, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
 	}
 
-	capabilities = append(capabilities, "UIDPLUS", "IDLE", "LITERAL+")
+	capabilities = append(capabilities, "UIDPLUS", "IDLE", "NAMESPACE", "UNSELECT", "LITERAL+")
 
 	return strings.Join(capabilities, " ")
 }
