@@ -67,13 +67,10 @@ func initGroupResolver(cfg *config.Config) *groupresolver.GroupResolver {
 	}
 
 	systemUsername := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
-	if systemUsername == "" {
-		systemUsername = "admin"
-	}
-
 	systemPassword := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
-	if systemPassword == "" {
-		systemPassword = "admin"
+	if systemUsername == "" || systemPassword == "" {
+		log.Println("Warning: IDP system credentials not configured, group email delivery will be disabled")
+		return nil
 	}
 
 	// Use shared application ID retrieval (env variables or thunder logs)

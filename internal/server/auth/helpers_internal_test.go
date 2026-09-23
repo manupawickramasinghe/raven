@@ -172,18 +172,6 @@ func TestBuildAuthHTTPClient(t *testing.T) {
 	}
 }
 
-func TestGetEnvOrDefault(t *testing.T) {
-	t.Setenv("AUTH_TEST_ENV", "")
-	if got := getEnvOrDefault("AUTH_TEST_ENV", "fallback"); got != "fallback" {
-		t.Fatalf("getEnvOrDefault() = %q, want %q", got, "fallback")
-	}
-
-	t.Setenv("AUTH_TEST_ENV", " configured ")
-	if got := getEnvOrDefault("AUTH_TEST_ENV", "fallback"); got != "configured" {
-		t.Fatalf("getEnvOrDefault() = %q, want %q", got, "configured")
-	}
-}
-
 func TestPostJSONAndGetJSON_ErrorAndSuccess(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
