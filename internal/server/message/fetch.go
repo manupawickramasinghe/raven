@@ -455,7 +455,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 
 		// Extract only the requested headers from the message
 		msg := loadRawMsg()
-		headersMap := map[string]string{}
+		headersMap := map[string][]string{}
 		lines := strings.Split(msg, "\r\n")
 		currentHeader := ""
 		for _, line := range lines {
@@ -465,7 +465,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 			// Check if this is a continuation line (starts with space or tab)
 			if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
 				if currentHeader != "" {
-					headersMap[currentHeader] += "\r\n" + line
+					headersMap[currentHeader] = append(headersMap[currentHeader], line)
 				}
 				continue
 			}
@@ -476,7 +476,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 				for _, h := range requestedHeaders {
 					if headerName == h {
 						currentHeader = h
-						headersMap[h] = line
+						headersMap[h] = []string{line}
 						break
 					}
 				}
@@ -486,8 +486,8 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 		// Build response with requested headers in order
 		var headerLines []string
 		for _, h := range requestedHeaders {
-			if val, ok := headersMap[h]; ok {
-				headerLines = append(headerLines, val)
+			if parts, ok := headersMap[h]; ok {
+				headerLines = append(headerLines, strings.Join(parts, "\r\n"))
 			}
 		}
 		headersStr := strings.Join(headerLines, "\r\n")
