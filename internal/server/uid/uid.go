@@ -492,6 +492,12 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 		return
 	}
 
+	// Per RFC 4315: UID EXPUNGE command silently ignores read-only mailboxes and returns OK
+	if state.ReadOnly {
+		deps.SendResponse(conn, fmt.Sprintf("%s OK UID EXPUNGE completed", tag))
+		return
+	}
+
 	// Get appropriate database (user or role mailbox)
 	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
