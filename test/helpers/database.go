@@ -14,7 +14,6 @@ import (
 // TestData contains test fixtures for integration tests
 type TestData struct {
 	Email     string
-	DomainID  int64
 	UserID    int64
 	MailboxID int64
 	MessageID int64
@@ -96,7 +95,6 @@ func SeedTestData(t *testing.T, dbManager *db.DBManager) TestData {
 
 	return TestData{
 		Email:     email,
-		DomainID:  0,
 		UserID:    0,
 		MailboxID: mailboxID,
 		MessageID: 0, // No message created by default
@@ -129,7 +127,6 @@ func CreateTestUser(t *testing.T, dbManager *db.DBManager, email string) TestDat
 
 	return TestData{
 		Email:     email,
-		DomainID:  0,
 		UserID:    0,
 		MailboxID: mailboxID,
 		MessageID: 0,
